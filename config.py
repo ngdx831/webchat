@@ -4,6 +4,9 @@ import os
 # 项目根目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# 运行时数据默认放在项目内 data/ 目录；生产环境可通过环境变量覆盖。
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
 # ===================== 1) Telegram 配置 =====================
 
 # 主 Bot Token 只从环境变量读取，不要把真实 Token 写入代码仓库。
@@ -18,8 +21,8 @@ ADMIN_IDS = {
 
 # ===================== 2) 数据库路径 =====================
 
-# 客服系统数据库（会话/事件）
-DB_PATH = os.path.join(BASE_DIR, "webchat.db")
+# 客服系统数据库（会话/事件）。可通过 WEBCHAT_DB_PATH 覆盖。
+DB_PATH = os.getenv("WEBCHAT_DB_PATH", "").strip() or os.path.join(DATA_DIR, "webchat.db")
 
 # ===================== 3) 清理策略 =====================
 
@@ -48,6 +51,6 @@ RATE_LIMIT_PER_60S = 24
 
 # ===================== 6) 客服系统媒体文件落盘目录 =====================
 
-# 客服系统的图片/视频存储路径
-# 最终访问路径是：https://kefu.ws/webchat/media/...
-WEBCHAT_MEDIA_ROOT = "/www/wwwroot/kefu.ws/webchat/media"
+# 默认落在项目内 data/media；生产可通过 WEBCHAT_MEDIA_ROOT 指向 Nginx 托管目录，
+# 例如：export WEBCHAT_MEDIA_ROOT=/www/wwwroot/kefu.ws/webchat/media
+WEBCHAT_MEDIA_ROOT = os.getenv("WEBCHAT_MEDIA_ROOT", "").strip() or os.path.join(DATA_DIR, "media")
