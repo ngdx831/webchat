@@ -1,13 +1,16 @@
+import logging
 import uuid
 
 from flask import Blueprint, jsonify, request
+from werkzeug.exceptions import RequestEntityTooLarge
 
 import db as dbm
-from config import CUSTOMER_WAITING_HINT
+from config import CUSTOMER_WAITING_HINT, MAX_TEXT_LENGTH
+from shared.errors import TelegramAPIError
 from shared.event_payload import event_row_to_payload
 
 from ..db_helpers import enrich_media_payload, get_conn, session_key_error, web_widget_or_error
-from ..rate_limit import allow_rate
+from ..rate_limit import allow_rate, client_ip_for_rate_limit
 from ..telegram_client import ensure_thread, tg_send_message
 from ..validators import (
     html_escape,
@@ -17,12 +20,15 @@ from ..validators import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 bp = Blueprint("messages", __name__)
 
 
 @bp.post("/api/msg/<key>")
 def api_msg(key: str):
-    ip = request.headers.get("X-Real-IP") or request.remote_addr or "0.0.0.0"
+    ip = client_ip_for_rate_limit()
     if not allow_rate(ip):
         return json_error(429, "RATE_LIMIT")
 
@@ -32,13 +38,15 @@ def api_msg(key: str):
 
     try:
         data = request.get_json(force=True, silent=False)
+    except RequestEntityTooLarge:
+        return json_error(413, "REQUEST_TOO_LARGE")
     except Exception:
         return json_error(400, "BAD_JSON")
 
-    text = (data.get("text") or "").strip()
-    session_id = (data.get("session_id") or "").strip()
+    text = (data.get("text") or "").strip()[: int(MAX_TEXT_LENGTH)]
+    session_id = (data.get("session_id") or "").strip()[:64]
     source_code = validate_source_code(data.get("source_code") or data.get("src") or "")
-    visitor_id = (data.get("visitor_id") or "").strip()
+    visitor_id = (data.get("visitor_id") or "").strip()[:64]
 
     if not text:
         return json_error(400, "EMPTY_TEXT")
@@ -104,7 +112,7 @@ def api_msg(key: str):
     # sendMessage 会报错 -> 这里自动重建话题并重试一次，避免前端收到 INTERNAL_ERROR。
     try:
         tg_send_message(forum_chat_id, int(thread_id), body)
-    except Exception:
+    except TelegramAPIError:
         try:
             thread_id = ensure_thread(
                 conn,
@@ -117,10 +125,12 @@ def api_msg(key: str):
                 force_new=True,
             )
             tg_send_message(forum_chat_id, int(thread_id), body)
-        except Exception as e2:
-            return json_error(502, "TG_SEND_FAILED", {"detail": str(e2)})
+        except TelegramAPIError:
+            logger.exception("tg_send_message failed after retry")
+            return json_error(502, "TG_SEND_FAILED")
 
-    return jsonify({"ok": True, "session_id": session_id})
+    stream_token = dbm.session_get_or_create_stream_token(conn, session_id)
+    return jsonify({"ok": True, "session_id": session_id, "stream_token": stream_token})
 
 
 @bp.get("/api/history/<key>")

@@ -26,8 +26,9 @@ async def _bind_customer_bot_token(
         probe = Bot(token)
         me = await probe.get_me()
         username = bot_username or (getattr(me, "username", "") or "")
-    except Exception as e:
-        return None, None, "", f"Bot token validation failed: {e}"
+    except Exception:
+        # 不要把原始异常文本回显给用户,它可能含 token 自身。
+        return None, None, "", "Bot token validation failed. Please check the token format."
 
     owner_user_id = widget.get("owner_user_id")
     if owner_user_id is not None:
@@ -89,7 +90,8 @@ async def handle_pending_action_message(msg: Message, bot: Bot) -> bool:
             dbm.pending_action_clear(conn, int(user["telegram_user_id"]))
             await msg.reply("Permission denied or key not found.")
             return True
-        dbm.widget_set_welcome_text(conn, key, text)
+        from config import MAX_RICH_TEXT_LENGTH
+        dbm.widget_set_welcome_text(conn, key, text[: int(MAX_RICH_TEXT_LENGTH)])
         dbm.pending_action_clear(conn, int(user["telegram_user_id"]))
         await msg.reply(f"Welcome text updated for key: {key}")
         return True

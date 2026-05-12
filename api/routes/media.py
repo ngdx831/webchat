@@ -101,5 +101,5 @@ def api_media(file_id: str):
     try:
         file_url = tg_get_file_url(file_id)
         return redirect(file_url)
-    except Exception as e:
-        return json_error(500, "GET_FILE_FAILED", {"detail": str(e)})
+    except Exception:
+        return json_error(500, "GET_FILE_FAILED")

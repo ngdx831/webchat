@@ -6,20 +6,37 @@ import db as dbm
 from config import DB_PATH
 from shared.session_cleanup import delete_session_record_and_media
 
+from shared.errors import scrub_secrets
+
+from ..auth import is_admin_user, open_user_context, require_owned_key
 from ..customer_bots import is_main_bot
 from ..media import PUBLIC_ROOT
 from ..runtime import dp
 
 
-async def mark_current_session(msg: Message, mark: str) -> None:
+def _resolve_session_owned(msg: Message):
+    """返回 (conn, session_id, error_text)。error_text 非空时表示无权限或环境不对。"""
     if not msg.message_thread_id or msg.chat.type != "supergroup":
-        await msg.reply("❌ 此命令只能在客服会话话题内使用")
-        return
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
+        return None, None, "❌ 此命令只能在客服会话话题内使用"
+
+    conn, user = open_user_context(msg)
     session_id = dbm.session_by_thread(conn, int(msg.chat.id), int(msg.message_thread_id))
     if not session_id:
-        await msg.reply("❌ 未找到对应的客服会话")
+        return conn, None, "❌ 未找到对应的客服会话"
+
+    session = dbm.session_get(conn, session_id)
+    key = (session or {}).get("key") or ""
+    # admin 始终放行;否则要求当前用户拥有该 key。
+    if not is_admin_user(user) and not require_owned_key(conn, user, key):
+        return conn, None, "❌ 你没有权限操作此会话"
+
+    return conn, session_id, ""
+
+
+async def mark_current_session(msg: Message, mark: str) -> None:
+    conn, session_id, err = _resolve_session_owned(msg)
+    if err:
+        await msg.reply(err)
         return
     marked_by = ""
     if msg.from_user:
@@ -56,12 +73,9 @@ async def cmd_end(msg: Message, bot: Bot):
         await msg.reply("❌ 此命令只能在超级群话题内使用")
         return
 
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
-
-    session_id = dbm.session_by_thread(conn, int(msg.chat.id), int(msg.message_thread_id))
-    if not session_id:
-        await msg.reply("❌ 未找到对应的客服会话")
+    conn, session_id, err = _resolve_session_owned(msg)
+    if err:
+        await msg.reply(err)
         return
 
     topic_deleted = False
@@ -73,7 +87,7 @@ async def cmd_end(msg: Message, bot: Bot):
             await bot.close_forum_topic(chat_id=msg.chat.id, message_thread_id=msg.message_thread_id)
         topic_deleted = True
     except Exception as e:
-        topic_error = str(e)
+        topic_error = scrub_secrets(str(e))
 
     deleted_count = delete_session_record_and_media(conn, session_id, PUBLIC_ROOT)
 

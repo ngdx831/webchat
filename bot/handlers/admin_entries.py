@@ -218,7 +218,8 @@ async def cmd_kmsg(msg: Message, bot: Bot):
         return
 
     key = parts[1].strip()
-    text = parts[2].strip()
+    from config import MAX_RICH_TEXT_LENGTH
+    text = parts[2].strip()[: int(MAX_RICH_TEXT_LENGTH)]
     try:
         key = validate_key(key)
     except Exception as e:

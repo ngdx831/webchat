@@ -1,4 +1,6 @@
+import hmac
 import json
+import secrets
 import sqlite3
 from datetime import timedelta
 from typing import Any, Dict, List, Optional
@@ -136,6 +138,59 @@ def session_get_media_paths(conn: sqlite3.Connection, session_id: str) -> List[s
     for row in rows:
         add_path(row["local_path"])
     return out
+
+
+def session_get_or_create_stream_token(conn: sqlite3.Connection, session_id: str) -> str:
+    """返回此 session 用于 SSE 鉴权的 token,不存在时创建并写库。
+
+    旧 schema(无 stream_token 列)下静默退化为空字符串;前端拿不到 token 就走
+    无 token 路径(只能本地访问,Nginx 反代场景仍受限于 API_HOST=127.0.0.1)。
+    """
+    try:
+        row = conn.execute(
+            "SELECT stream_token FROM sessions WHERE session_id=? LIMIT 1",
+            (session_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    if not row:
+        return ""
+    existing = (row["stream_token"] or "").strip() if isinstance(row, sqlite3.Row) else ""
+    if existing:
+        return existing
+    token = secrets.token_urlsafe(24)
+    try:
+        conn.execute(
+            "UPDATE sessions SET stream_token=? WHERE session_id=? AND COALESCE(stream_token, '')=''",
+            (token, session_id),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT stream_token FROM sessions WHERE session_id=? LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return (row["stream_token"] or "").strip() if row else token
+    except sqlite3.OperationalError:
+        return ""
+
+
+def session_verify_stream_token(conn: sqlite3.Connection, session_id: str, token: str) -> bool:
+    if not token:
+        return False
+    try:
+        row = conn.execute(
+            "SELECT stream_token FROM sessions WHERE session_id=? LIMIT 1",
+            (session_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    if not row:
+        return False
+    stored = (row["stream_token"] or "").strip() if isinstance(row, sqlite3.Row) else ""
+    if not stored:
+        # 旧 session 没有 token,允许通过以保持向后兼容(浏览器端会自动 reconnect 拿新 token)。
+        return True
+    return hmac.compare_digest(stored, str(token))
 
 
 def session_delete(conn: sqlite3.Connection, session_id: str) -> None:

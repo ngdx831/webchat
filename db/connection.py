@@ -19,8 +19,20 @@ def get_conn(path: str) -> sqlite3.Connection:
     parent = os.path.dirname(path)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    conn = sqlite3.connect(path, check_same_thread=False)
+    conn = sqlite3.connect(path, check_same_thread=False, timeout=5.0)
     conn.row_factory = sqlite3.Row
+    # 并发友好的 PRAGMA;失败时静默(老数据库可能不支持)。
+    for pragma in (
+        "PRAGMA journal_mode=WAL",
+        "PRAGMA busy_timeout=5000",
+        "PRAGMA synchronous=NORMAL",
+        "PRAGMA foreign_keys=ON",
+        "PRAGMA temp_store=MEMORY",
+    ):
+        try:
+            conn.execute(pragma)
+        except sqlite3.DatabaseError:
+            continue
     return conn
 
 

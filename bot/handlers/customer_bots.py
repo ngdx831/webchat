@@ -17,13 +17,15 @@ from ..customer_bots import (
 )
 from ..runtime import dp
 from ..validators import explain_key_error, validate_key
-from .admin_users import _admin_context_or_reply
 
 
 @dp.message(Command("botadd"))
 async def cmd_botadd(msg: Message, bot: Bot):
-    conn, user, ok = await _admin_context_or_reply(msg, bot)
-    if not ok:
+    if not is_main_bot(bot):
+        return
+    conn, user = open_user_context(msg)
+    if not require_enabled_user(user):
+        await msg.reply("Account disabled. Please contact admin.")
         return
 
     parts = (msg.text or "").split(maxsplit=3)
@@ -38,22 +40,21 @@ async def cmd_botadd(msg: Message, bot: Bot):
         await msg.reply(explain_key_error(str(e)))
         return
 
-    widget = dbm.widget_get(conn, key)
+    widget = require_owned_key(conn, user, key)
     if not widget:
-        await msg.reply(f"❌ 未找到 key：{key}")
+        await msg.reply("Permission denied or key not found.")
         return
 
     try:
         probe = Bot(token)
         me = await probe.get_me()
         username = username or (me.username or "")
-    except Exception as e:
-        await msg.reply(f"❌ 机器人 Token 验证失败：{e}")
+    except Exception:
+        # 不回显原始异常,token 可能在异常文本里。
+        await msg.reply("❌ 机器人 Token 验证失败,请检查 token 格式或网络。")
         return
 
-    owner_user_id = widget.get("owner_user_id")
-    if owner_user_id is None:
-        owner_user_id = int(user["telegram_user_id"])
+    owner_user_id = widget.get("owner_user_id") or int(user["telegram_user_id"])
     binding_id = dbm.bot_binding_add(conn, key, token, username, enabled=1, owner_user_id=int(owner_user_id))
     binding = dbm.bot_binding_get(conn, binding_id) or {
         "id": binding_id,

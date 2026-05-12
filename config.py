@@ -49,8 +49,62 @@ API_PORT = 5055
 # 同一个 IP 每 60 秒最多发多少次消息到客服
 RATE_LIMIT_PER_60S = 24
 
+# 可信代理 CIDR 列表（逗号分隔）。只有来自这些代理的请求才会读取 X-Real-IP /
+# X-Forwarded-For;默认仅信任本机回环。
+TRUSTED_PROXIES = os.getenv("WEBCHAT_TRUSTED_PROXIES", "127.0.0.0/8").strip()
+
+# ===================== 5b) 内部接口鉴权 =====================
+
+# /internal/notify 必须带的 Bearer Token;Bot 进程与 API 进程共享同一个值。
+# 未设置时,启动会自动生成一个临时 token(写入 data/.internal_token),
+# 防止裸启动也能被攻击者利用;生产请务必显式设置 WEBCHAT_INTERNAL_TOKEN。
+INTERNAL_NOTIFY_TOKEN = os.getenv("WEBCHAT_INTERNAL_TOKEN", "").strip()
+
+# ===================== 5c) 输入上限 =====================
+
+# 单条客户消息最大字符数(防止单条 GB 级文本拖垮后端)
+MAX_TEXT_LENGTH = 3500
+
+# 单次 HTTP 请求体最大字节数(Flask 全局 MAX_CONTENT_LENGTH)
+MAX_REQUEST_BYTES = 64 * 1024
+
+# 欢迎语 / 离线语 / 快捷回复等富文本字段的最大字符数
+MAX_RICH_TEXT_LENGTH = 4000
+
 # ===================== 6) 客服系统媒体文件落盘目录 =====================
 
 # 默认落在项目内 data/media；生产可通过 WEBCHAT_MEDIA_ROOT 指向 Nginx 托管目录，
 # 例如：export WEBCHAT_MEDIA_ROOT=/www/wwwroot/kefu.ws/webchat/media
 WEBCHAT_MEDIA_ROOT = os.getenv("WEBCHAT_MEDIA_ROOT", "").strip() or os.path.join(DATA_DIR, "media")
+
+
+def _resolved_internal_token() -> str:
+    if INTERNAL_NOTIFY_TOKEN:
+        return INTERNAL_NOTIFY_TOKEN
+    import secrets
+    token_path = os.path.join(DATA_DIR, ".internal_token")
+    try:
+        with open(token_path, "r", encoding="utf-8") as f:
+            existing = (f.read() or "").strip()
+            if existing:
+                return existing
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return secrets.token_urlsafe(32)
+    token = secrets.token_urlsafe(32)
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(token_path, "w", encoding="utf-8") as f:
+            f.write(token)
+        try:
+            os.chmod(token_path, 0o600)
+        except OSError:
+            pass
+    except OSError:
+        pass
+    return token
+
+
+# 真正生效的内部通知 token,API 进程与 Bot 进程通过 import 都会拿到同一个值。
+RESOLVED_INTERNAL_TOKEN = _resolved_internal_token()

@@ -172,6 +172,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         "customer_status TEXT NOT NULL DEFAULT 'none'",
         "marked_by TEXT DEFAULT ''",
         "marked_at TEXT DEFAULT ''",
+        "stream_token TEXT DEFAULT ''",
     ]:
         _add_column(conn, "sessions", definition)
 
