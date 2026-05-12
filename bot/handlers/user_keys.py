@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 import db as dbm
+from config import MAX_RICH_TEXT_LENGTH
 
 from ..auth import (
     key_limit_for_role,
@@ -43,7 +44,7 @@ async def cmd_keyadd(msg: Message, bot: Bot):
         return
 
     key = parts[1].strip()
-    display_name = parts[2].strip()
+    display_name = parts[2].strip()[:120]
     try:
         key = validate_key(key)
     except Exception as e:

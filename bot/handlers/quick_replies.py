@@ -20,6 +20,9 @@ async def cmd_qradd(msg: Message, bot: Bot):
         return
     key = parts[1].strip()
     title, answer = [x.strip() for x in parts[2].split("|", 1)]
+    from config import MAX_RICH_TEXT_LENGTH
+    title = title[:120]
+    answer = answer[: int(MAX_RICH_TEXT_LENGTH)]
     _, _, _, permission_error = vip_key_context(msg, key)
     if permission_error:
         await msg.reply(permission_error)

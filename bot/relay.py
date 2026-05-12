@@ -7,7 +7,7 @@ from aiogram import Bot
 from aiogram.types import FSInputFile
 
 import db as dbm
-from config import API_HOST, API_PORT
+from config import API_HOST, API_PORT, RESOLVED_INTERNAL_TOKEN
 
 from .customer_bots import CUSTOMER_BOTS_BY_BINDING_ID
 from .media import abs_public_path
@@ -25,13 +25,18 @@ except Exception:  # pragma: no cover
     aiohttp = None
 
 
+def _internal_headers() -> Dict[str, str]:
+    return {"Authorization": f"Bearer {RESOLVED_INTERNAL_TOKEN}"} if RESOLVED_INTERNAL_TOKEN else {}
+
+
 async def http_post_json(url: str, payload: Dict, timeout: float = 2.0) -> None:
     """优先 aiohttp；没有就用 asyncio.to_thread 包 requests。"""
+    headers = _internal_headers()
     if aiohttp is not None:
         try:
             t = aiohttp.ClientTimeout(total=timeout)
             async with aiohttp.ClientSession(timeout=t) as session:
-                async with session.post(url, json=payload) as resp:
+                async with session.post(url, json=payload, headers=headers) as resp:
                     with suppress(Exception):
                         await resp.text()
             return
@@ -40,7 +45,7 @@ async def http_post_json(url: str, payload: Dict, timeout: float = 2.0) -> None:
 
     def _sync():
         try:
-            requests.post(url, json=payload, timeout=timeout)
+            requests.post(url, json=payload, headers=headers, timeout=timeout)
         except Exception:
             pass
 
@@ -48,7 +53,9 @@ async def http_post_json(url: str, payload: Dict, timeout: float = 2.0) -> None:
 
 
 async def notify_web(session_id: str, event_data: Dict) -> None:
-    await http_post_json(API_NOTIFY_URL, {"session_id": session_id, "event": event_data}, timeout=2.0)
+    payload = dict(event_data or {})
+    payload.setdefault("type", "msg")
+    await http_post_json(API_NOTIFY_URL, {"session_id": session_id, "event": payload}, timeout=2.0)
 
 
 def _rand_topic_tag(n: int = 4) -> str:

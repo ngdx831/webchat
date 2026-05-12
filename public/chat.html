@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <title>在线客服</title>
   <style>
     :root {
@@ -226,12 +227,22 @@
     const sourceCode = params.get("src") || "";
     const visitorKey = `webchat:visitor:${pathKey}`;
     const sessionKey = `webchat:session:${pathKey}`;
+    const streamTokenKey = `webchat:stream_token:${pathKey}`;
     const visitorId = getOrCreate(visitorKey);
     let sessionId = localStorage.getItem(sessionKey) || cryptoRandom();
+    let streamToken = sessionStorage.getItem(streamTokenKey) || "";
     let stream = null;
     let lastEventId = 0;
     const notifiedEventIds = new Set();
     let notificationPermissionRequested = false;
+
+    // 仅允许 http/https/相对路径作为媒体 URL,杜绝 javascript: 等危险协议。
+    function safeMediaUrl(u, fallbackFileId) {
+      const v = (u || "").trim();
+      if (v && /^(https?:|\/)/i.test(v)) return v;
+      if (fallbackFileId) return `/api/media/${encodeURIComponent(fallbackFileId)}`;
+      return "";
+    }
 
     const messages = document.getElementById("messages");
     const input = document.getElementById("input");
@@ -358,7 +369,7 @@
       const img = document.createElement("img");
       img.className = "media";
       img.alt = "图片";
-      img.src = message.media_url || `/api/media/${encodeURIComponent(message.file_id || "")}`;
+      img.src = safeMediaUrl(message.media_url, message.file_id);
       img.onerror = () => {
         img.replaceWith(Object.assign(document.createElement("div"), { className: "expired", textContent: "图片已过期" }));
       };
@@ -370,7 +381,7 @@
       const video = document.createElement("video");
       video.className = "media";
       video.controls = true;
-      video.src = message.media_url || `/api/media/${encodeURIComponent(message.file_id || "")}`;
+      video.src = safeMediaUrl(message.media_url, message.file_id);
       box.appendChild(video);
     }
 
@@ -381,9 +392,12 @@
         a.removeAttribute("href");
         a.textContent = "文件已过期";
       } else {
-        a.href = message.media_url || `/api/media/${encodeURIComponent(message.file_id || "")}`;
-        a.target = "_blank";
-        a.rel = "noopener";
+        const href = safeMediaUrl(message.media_url, message.file_id);
+        if (href) {
+          a.href = href;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+        }
         a.textContent = message.file_name || "打开文件";
       }
       box.appendChild(a);
@@ -401,21 +415,24 @@
         const video = document.createElement("video");
         video.className = "media";
         video.controls = true;
-        video.src = item.media_url || `/api/media/${encodeURIComponent(item.file_id || "")}`;
+        video.src = safeMediaUrl(item.media_url, item.file_id);
         grid.appendChild(video);
       } else if (item.type === "document") {
         const a = document.createElement("a");
         a.className = "file-card";
-        a.href = item.media_url || `/api/media/${encodeURIComponent(item.file_id || "")}`;
-        a.target = "_blank";
-        a.rel = "noopener";
+        const href = safeMediaUrl(item.media_url, item.file_id);
+        if (href) {
+          a.href = href;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+        }
         a.textContent = "打开文件";
         grid.appendChild(a);
       } else {
         const img = document.createElement("img");
         img.className = "media";
         img.alt = "图片";
-        img.src = item.media_url || `/api/media/${encodeURIComponent(item.file_id || "")}`;
+        img.src = safeMediaUrl(item.media_url, item.file_id);
         grid.appendChild(img);
       }
     }
@@ -471,9 +488,13 @@
       (data.events || []).forEach(appendMessage);
     }
 
-    function connectStream() {
+    function connectStream(force) {
+      // 复用已打开的连接(避免每次发完消息都重连导致后端连接数翻倍)。
+      if (stream && stream.readyState !== 2 && !force) return;
       if (stream) stream.close();
-      stream = new EventSource(`/api/stream/${encodeURIComponent(sessionId)}?since_id=${lastEventId}`);
+      let url = `/api/stream/${encodeURIComponent(sessionId)}?since_id=${lastEventId}`;
+      if (streamToken) url += `&token=${encodeURIComponent(streamToken)}`;
+      stream = new EventSource(url);
       stream.addEventListener("msg", (event) => {
         const payload = JSON.parse(event.data);
         appendMessage(payload, { notify: true });
@@ -503,10 +524,29 @@
         appendMessage({ role: "system", kind: "text", text: `发送失败：${data.error || "UNKNOWN"}` });
         return;
       }
-      sessionId = data.session_id || sessionId;
+      const newSessionId = data.session_id || sessionId;
+      const sessionChanged = newSessionId !== sessionId;
+      sessionId = newSessionId;
       localStorage.setItem(sessionKey, sessionId);
-      connectStream();
+      if (data.stream_token) {
+        streamToken = data.stream_token;
+        try { sessionStorage.setItem(streamTokenKey, streamToken); } catch (_) {}
+      }
+      // 只有 session 变化或 stream 已关闭时才重连。
+      if (sessionChanged || !stream || stream.readyState === 2) connectStream(true);
     }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && stream) {
+        stream.close();
+        stream = null;
+      } else if (!document.hidden) {
+        connectStream();
+      }
+    });
+    window.addEventListener("pagehide", () => {
+      if (stream) { stream.close(); stream = null; }
+    });
 
     sendBtn.addEventListener("click", sendMessage);
     input.addEventListener("keydown", (event) => {
