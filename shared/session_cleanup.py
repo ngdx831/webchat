@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Callable, List, Optional
 
 import db as dbm
 
@@ -55,8 +55,6 @@ def cleanup_expired_media_files(conn, public_root: str, media_ttl_seconds: int) 
         removed = delete_media_files(public_root, [rel_path])
         if removed:
             deleted += removed
-        # Mark as expired even when the file is already missing, so the UI can
-        # render a stable expired-media placeholder instead of retrying forever.
         if file_id:
             dbm.media_asset_mark_deleted(conn, file_id)
     return deleted
