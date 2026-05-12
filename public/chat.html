@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>在线客服</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --line: #d9dee7;
+      --text: #18212f;
+      --muted: #667085;
+      --brand: #1769e0;
+      --agent: #ffffff;
+      --user: #dbeafe;
+      --system: #eef2f7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      max-width: 760px;
+      margin: 0 auto;
+      background: var(--panel);
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+    }
+
+    header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .name {
+      font-size: 17px;
+      font-weight: 700;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .status {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    main {
+      overflow: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .msg {
+      width: fit-content;
+      max-width: min(82%, 560px);
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .msg.agent {
+      background: var(--agent);
+      align-self: flex-start;
+    }
+
+    .msg.user {
+      background: var(--user);
+      border-color: #bfdbfe;
+      align-self: flex-end;
+    }
+
+    .msg.system {
+      max-width: 100%;
+      background: var(--system);
+      color: var(--muted);
+      align-self: center;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .from {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .media {
+      display: block;
+      max-width: 100%;
+      width: min(360px, 100%);
+      max-height: 360px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f3f4f6;
+    }
+
+    .file-card,
+    .expired {
+      width: min(360px, 100%);
+      min-height: 86px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      display: grid;
+      align-items: center;
+      padding: 12px;
+      background: #f8fafc;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .note-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+      width: min(420px, 100%);
+    }
+
+    .quick {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 10px 12px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .quick button {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      height: 34px;
+      border-radius: 6px;
+      padding: 0 10px;
+      cursor: pointer;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    footer {
+      padding: 10px 12px 12px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      border-top: 0;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 42px;
+      max-height: 130px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      font: inherit;
+      line-height: 1.4;
+    }
+
+    .send {
+      width: 72px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    @media (max-width: 640px) {
+      .app {
+        border: 0;
+      }
+
+      .msg {
+        max-width: 90%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="name" id="displayName">在线客服</div>
+      <div class="status" id="statusText">连接中</div>
+    </header>
+    <main id="messages"></main>
+    <div class="quick" id="quickReplies" hidden></div>
+    <footer>
+      <textarea id="input" rows="1" placeholder="请输入消息"></textarea>
+      <button class="send" id="sendBtn" type="button">发送</button>
+    </footer>
+  </div>
+
+  <script>
+    const pathKey = decodeURIComponent(location.pathname.replace(/^\/+/, "").split("/")[0] || "");
+    const params = new URLSearchParams(location.search);
+    const sourceCode = params.get("src") || "";
+    const visitorKey = `webchat:visitor:${pathKey}`;
+    const sessionKey = `webchat:session:${pathKey}`;
+    const visitorId = getOrCreate(visitorKey);
+    let sessionId = localStorage.getItem(sessionKey) || cryptoRandom();
+    let stream = null;
+    let lastEventId = 0;
+    const notifiedEventIds = new Set();
+    let notificationPermissionRequested = false;
+
+    const messages = document.getElementById("messages");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("sendBtn");
+    const quickReplies = document.getElementById("quickReplies");
+    const displayName = document.getElementById("displayName");
+    const statusText = document.getElementById("statusText");
+
+    function cryptoRandom() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replaceAll("-", "");
+      return `${Date.now()}${Math.random().toString(16).slice(2)}`;
+    }
+
+    function getOrCreate(key) {
+      let value = localStorage.getItem(key);
+      if (!value) {
+        value = cryptoRandom();
+        localStorage.setItem(key, value);
+      }
+      return value;
+    }
+
+    function notificationSupported() {
+      return "Notification" in window;
+    }
+
+    function requestNotificationPermission() {
+      if (!notificationSupported()) return;
+      if (Notification.permission !== "default") return;
+      if (notificationPermissionRequested) return;
+      notificationPermissionRequested = true;
+      const request = Notification.requestPermission();
+      if (request && typeof request.catch === "function") request.catch(() => {});
+    }
+
+    function notificationBody(message) {
+      const text = (message.text || message.caption || message.body || "").trim();
+      if (text) return text.length > 80 ? `${text.slice(0, 80)}...` : text;
+      if (message.kind === "photo") return "客服发来一条图片消息";
+      if (message.kind === "video") return "客服发来一条视频消息";
+      if (message.kind === "document") return "客服发来一个文件";
+      if (message.kind === "note") return "客服发来一条笔记";
+      return "客服发来一条新消息";
+    }
+
+    function maybeNotifyAgentMessage(message) {
+      if (message.role !== "agent") return;
+      if (!document.hidden) return;
+      if (!notificationSupported()) return;
+      if (Notification.permission !== "granted") return;
+
+      const eventId = message.id ? String(message.id) : "";
+      if (eventId && notifiedEventIds.has(eventId)) return;
+      if (eventId) notifiedEventIds.add(eventId);
+
+      try {
+        const notification = new Notification(displayName.textContent || pathKey || "在线客服", {
+          body: notificationBody(message),
+          tag: eventId ? `webchat:${pathKey}:${sessionId}:${eventId}` : `webchat:${pathKey}:${sessionId}`
+        });
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      } catch (_) {}
+    }
+
+    function appendMessage(message, options = {}) {
+      const role = message.role || "system";
+      const box = document.createElement("div");
+      box.className = `msg ${role}`;
+
+      if (message.from_name) {
+        const from = document.createElement("div");
+        from.className = "from";
+        from.textContent = message.from_name;
+        box.appendChild(from);
+      }
+
+      renderContent(box, message);
+      messages.appendChild(box);
+      messages.scrollTop = messages.scrollHeight;
+      if (message.id) lastEventId = Math.max(lastEventId, Number(message.id) || 0);
+      if (options.notify) maybeNotifyAgentMessage(message);
+    }
+
+    function renderContent(box, message) {
+      const kind = message.kind || "text";
+      if (kind === "photo") {
+        renderPhoto(box, message);
+      } else if (kind === "video") {
+        renderVideo(box, message);
+      } else if (kind === "document") {
+        renderDocument(box, message);
+      } else if (kind === "note") {
+        renderText(box, message.title || "客服笔记");
+        if (message.body) renderText(box, message.body);
+        const grid = document.createElement("div");
+        grid.className = "note-grid";
+        (message.media || []).forEach((item) => renderMediaItem(grid, item));
+        if (grid.children.length) box.appendChild(grid);
+      } else {
+        renderText(box, message.text || "");
+      }
+
+      if (message.caption) renderText(box, message.caption);
+    }
+
+    function renderText(box, text) {
+      const div = document.createElement("div");
+      div.textContent = text || "";
+      box.appendChild(div);
+    }
+
+    function renderExpired(box, label) {
+      const div = document.createElement("div");
+      div.className = "expired";
+      div.textContent = label;
+      box.appendChild(div);
+    }
+
+    function renderPhoto(box, message) {
+      if (message.media_expired) return renderExpired(box, "图片已过期");
+      const img = document.createElement("img");
+      img.className = "media";
+      img.alt = "图片";
+      img.src = message.media_url || `/api/media/${encodeURIComponent(message.file_id || "")}`;
+      img.onerror = () => {
+        img.replaceWith(Object.assign(document.createElement("div"), { className: "expired", textContent: "图片已过期" }));
+      };
+      box.appendChild(img);
+    }
+
+    function renderVideo(box, message) {
+      if (message.media_expired) return renderExpired(box, "视频已过期");
+      const video = document.createElement("video");
+      video.className = "media";
+      video.controls = true;
+      video.src = message.media_url || `/api/media/${encodeURIComponent(message.file_id || "")}`;
+      box.appendChild(video);
+    }
+
+    function renderDocument(box, message) {
+      const a = document.createElement("a");
+      a.className = "file-card";
+      if (message.media_expired) {
+        a.removeAttribute("href");
+        a.textContent = "文件已过期";
+      } else {
+        a.href = message.media_url || `/api/media/${encodeURIComponent(message.file_id || "")}`;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = message.file_name || "打开文件";
+      }
+      box.appendChild(a);
+    }
+
+    function renderMediaItem(grid, item) {
+      const wrap = document.createElement("div");
+      if (item.media_expired) {
+        wrap.className = "expired";
+        wrap.textContent = item.type === "video" ? "视频已过期" : item.type === "document" ? "文件已过期" : "图片已过期";
+        grid.appendChild(wrap);
+        return;
+      }
+      if (item.type === "video") {
+        const video = document.createElement("video");
+        video.className = "media";
+        video.controls = true;
+        video.src = item.media_url || `/api/media/${encodeURIComponent(item.file_id || "")}`;
+        grid.appendChild(video);
+      } else if (item.type === "document") {
+        const a = document.createElement("a");
+        a.className = "file-card";
+        a.href = item.media_url || `/api/media/${encodeURIComponent(item.file_id || "")}`;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = "打开文件";
+        grid.appendChild(a);
+      } else {
+        const img = document.createElement("img");
+        img.className = "media";
+        img.alt = "图片";
+        img.src = item.media_url || `/api/media/${encodeURIComponent(item.file_id || "")}`;
+        grid.appendChild(img);
+      }
+    }
+
+    async function loadWidget() {
+      const url = `/widget/${encodeURIComponent(pathKey)}?visitor_id=${encodeURIComponent(visitorId)}${sourceCode ? `&src=${encodeURIComponent(sourceCode)}` : ""}`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (!data.ok) {
+        statusText.textContent = "入口不可用";
+        appendMessage({ role: "system", kind: "text", text: "客服入口不存在或暂不可用。" });
+        return;
+      }
+
+      displayName.textContent = data.display_name || pathKey || "在线客服";
+      statusText.textContent = data.enabled ? "在线" : "离线";
+      if (!data.enabled && data.offline_msg) {
+        appendMessage({ role: "system", kind: "text", text: data.offline_msg });
+      } else if (data.waiting_hint) {
+        appendMessage({ role: "system", kind: "text", text: data.waiting_hint });
+      }
+      renderQuickReplies(data.quick_replies || []);
+      await loadHistory();
+      connectStream();
+    }
+
+    function renderQuickReplies(items) {
+      quickReplies.innerHTML = "";
+      if (!items.length) {
+        quickReplies.hidden = true;
+        return;
+      }
+      items.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.title = item.title;
+        btn.textContent = item.title;
+        btn.addEventListener("click", () => {
+          appendMessage({ role: "user", kind: "text", text: item.title });
+          appendMessage({ role: "system", kind: "text", text: item.answer });
+        });
+        quickReplies.appendChild(btn);
+      });
+      quickReplies.hidden = false;
+    }
+
+    async function loadHistory() {
+      const resp = await fetch(`/api/history/${encodeURIComponent(pathKey)}?session_id=${encodeURIComponent(sessionId)}`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (!data.ok) return;
+      messages.innerHTML = "";
+      (data.events || []).forEach(appendMessage);
+    }
+
+    function connectStream() {
+      if (stream) stream.close();
+      stream = new EventSource(`/api/stream/${encodeURIComponent(sessionId)}?since_id=${lastEventId}`);
+      stream.addEventListener("msg", (event) => {
+        const payload = JSON.parse(event.data);
+        appendMessage(payload, { notify: true });
+      });
+    }
+
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+      requestNotificationPermission();
+      input.value = "";
+      appendMessage({ role: "user", kind: "text", text });
+      localStorage.setItem(sessionKey, sessionId);
+
+      const resp = await fetch(`/api/msg/${encodeURIComponent(pathKey)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          visitor_id: visitorId,
+          source_code: sourceCode,
+          text
+        })
+      });
+      const data = await resp.json();
+      if (!data.ok) {
+        appendMessage({ role: "system", kind: "text", text: `发送失败：${data.error || "UNKNOWN"}` });
+        return;
+      }
+      sessionId = data.session_id || sessionId;
+      localStorage.setItem(sessionKey, sessionId);
+      connectStream();
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+    });
+
+    loadWidget().catch(() => {
+      statusText.textContent = "连接失败";
+      appendMessage({ role: "system", kind: "text", text: "无法连接客服服务，请稍后再试。" });
+    });
+  </script>
+</body>
+</html>
