@@ -14,9 +14,11 @@
 - 一个已开启话题功能的 Telegram 超级群。
 - 服务器能访问 Telegram Bot API。
 - Nginx 或其他反向代理。
-- 可写的客服媒体目录：`/www/wwwroot/kefu.ws/webchat/media`。
+- 可写的客服媒体目录。默认值为项目内 `data/media`；如需让 Nginx 直接托管，可通过 `WEBCHAT_MEDIA_ROOT` 环境变量指向例如 `/www/wwwroot/kefu.ws/webchat/media`。
 
-建议服务运行用户使用 `www`，并让该用户拥有项目目录、数据库文件和媒体目录的读写权限。
+建议服务运行用户使用 `www`，并让该用户拥有项目目录、`data/` 目录、数据库文件和媒体目录的读写权限。
+
+前后端分离部署（例如后端在新加坡、前端 Nginx 在香港）目前仍把媒体落在后端 `data/media/`，访客通过 Flask `GET /api/media/<file_id>` 取文件。把媒体迁到前端机器（远程挂载、HTTPS 推送或对象存储）是后续独立优化项，本手册暂不展开。
 
 ## 安装依赖
 
@@ -34,13 +36,36 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-创建媒体目录：
+创建数据目录（数据库和默认媒体目录都在 `data/` 下）：
+
+```bash
+mkdir -p /www/wwwroot/webchat/data/media
+chown -R www:www /www/wwwroot/webchat
+```
+
+如果生产环境希望由 Nginx 直接托管媒体静态目录，可以单独建一个目录并通过环境变量 `WEBCHAT_MEDIA_ROOT` 覆盖默认值：
 
 ```bash
 mkdir -p /www/wwwroot/kefu.ws/webchat/media
-chown -R www:www /www/wwwroot/webchat
 chown -R www:www /www/wwwroot/kefu.ws/webchat/media
+# 在 systemd unit 或 shell profile 中：
+# export WEBCHAT_MEDIA_ROOT=/www/wwwroot/kefu.ws/webchat/media
 ```
+
+### 从旧版本迁移
+
+旧版本把 `webchat.db` 直接放在项目根目录。升级到分层目录结构后，默认数据库路径变成 `data/webchat.db`。一次性迁移：
+
+```bash
+systemctl stop webchat-api webchat-bot
+mkdir -p data
+mv webchat.db data/webchat.db
+# 如果旧版本媒体也放在项目内，可一并搬迁
+[ -d media ] && mv media data/media
+systemctl start webchat-api webchat-bot
+```
+
+若不想搬动现有数据，也可以在 `config.py` 里把 `DB_PATH` 显式写回旧路径，或者通过环境变量覆盖。
 
 ## 修改配置
 
@@ -52,8 +77,8 @@ chown -R www:www /www/wwwroot/kefu.ws/webchat/media
 | `ADMIN_IDS` | 填写管理员 Telegram 用户 ID。 |
 | `API_HOST` | 生产环境建议保持 `127.0.0.1`。 |
 | `API_PORT` | 默认 `5055`。 |
-| `DB_PATH` | 默认 `webchat.db`。 |
-| `WEBCHAT_MEDIA_ROOT` | 指向客服媒体静态目录。 |
+| `DB_PATH` | 默认 `data/webchat.db`。 |
+| `WEBCHAT_MEDIA_ROOT` | 客服媒体落盘目录，默认 `data/media`，可通过环境变量覆盖到 Nginx 托管的静态目录。 |
 | `SESSION_TTL_SECONDS` | 会话创建超过该时间后自动删除，默认约 2 个月。 |
 | `SESSION_IDLE_TTL_SECONDS` | 最后一次客户/客服消息超过该时间后自动删除，默认约 2 个月。 |
 | `MEDIA_TTL_SECONDS` | 本地媒体文件超过该时间后自动删除，默认约 3 天。 |
@@ -211,7 +236,10 @@ location /widget/ {
 }
 ```
 
-媒体静态目录：
+媒体目录有两种托管方式：
+
+1. 默认走 Flask：媒体落在后端 `data/media/`，访客通过 `GET /api/media/<file_id>` 拉取，Nginx 不需要额外配置 `location`。前后端跨机房部署时也走这种方式。
+2. 单机部署可让 Nginx 直接托管静态文件（`WEBCHAT_MEDIA_ROOT` 指向该路径）：
 
 ```nginx
 location /webchat/media/ {
@@ -374,22 +402,22 @@ VIP 或管理员查看来源统计和维护快速回复：
 
 需要备份：
 
-- `/www/wwwroot/webchat/webchat.db`
-- `/www/wwwroot/kefu.ws/webchat/media`
+- `/www/wwwroot/webchat/data/webchat.db`
+- `/www/wwwroot/webchat/data/media`（如果 `WEBCHAT_MEDIA_ROOT` 指向别处，备份目标也要相应调整，例如 `/www/wwwroot/kefu.ws/webchat/media`）
 
 停机备份：
 
 ```bash
 systemctl stop webchat-api webchat-bot
-cp webchat.db backup/webchat.db
-rsync -a /www/wwwroot/kefu.ws/webchat/media/ backup/webchat-media/
+cp data/webchat.db backup/webchat.db
+rsync -a data/media/ backup/webchat-media/
 systemctl start webchat-api webchat-bot
 ```
 
 不停机备份数据库：
 
 ```bash
-sqlite3 webchat.db ".backup 'backup/webchat.db'"
+sqlite3 data/webchat.db ".backup 'backup/webchat.db'"
 ```
 
 恢复时先停止两个服务，再替换数据库和媒体目录。
@@ -425,7 +453,7 @@ journalctl -u webchat-bot -n 100
 
 ```bash
 python -m unittest discover -s tests
-python -m py_compile api_server.py config.py db.py event_payload.py session_cleanup.py tg_bot.py
+python -m compileall api_server.py tg_bot.py config.py api bot db shared
 ```
 
 测试环境手动验收：
