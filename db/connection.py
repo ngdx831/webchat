@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -15,6 +16,9 @@ def _iso_after(seconds: int) -> str:
 
 
 def get_conn(path: str) -> sqlite3.Connection:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
