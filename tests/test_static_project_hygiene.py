@@ -32,6 +32,13 @@ class StaticProjectHygieneTests(unittest.TestCase):
 
         self.assertIn("session_access_error", guarded_prefix)
 
+    def test_readme_quick_start_mentions_cleanup_worker(self):
+        source = (ROOT / "README.md").read_text(encoding="utf-8")
+        quick_start = source[source.index("## 快速开始"):source.index("## 用户角色与权限")]
+
+        self.assertIn("python -m api.cleanup_worker", quick_start)
+        self.assertIn("docs/OPERATIONS.md", quick_start)
+
 
 if __name__ == "__main__":
     unittest.main()

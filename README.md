@@ -197,6 +197,14 @@ python api_server.py
 python tg_bot.py
 ```
 
+再起一个 systemd timer 或 cron 定时清理过期会话和媒体，建议每分钟执行一次：
+
+```bash
+python -m api.cleanup_worker
+```
+
+生产环境的 systemd unit 和 timer 示例见 `docs/OPERATIONS.md` 的「定时清理任务」。
+
 检查 API：
 
 ```bash
