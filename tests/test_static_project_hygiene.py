@@ -39,6 +39,16 @@ class StaticProjectHygieneTests(unittest.TestCase):
         self.assertIn("python -m api.cleanup_worker", quick_start)
         self.assertIn("docs/OPERATIONS.md", quick_start)
 
+    def test_production_api_service_uses_gunicorn(self):
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        operations = (ROOT / "docs" / "OPERATIONS.md").read_text(encoding="utf-8")
+
+        self.assertIn("gunicorn==23.0.0", requirements)
+        self.assertIn(
+            'ExecStart=/www/wwwroot/webchat/venv/bin/gunicorn -k gthread -w 2 --threads 16 -b 127.0.0.1:5055 "api.app:create_app()"',
+            operations,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

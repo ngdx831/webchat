@@ -158,7 +158,7 @@ WorkingDirectory=/www/wwwroot/webchat
 Environment=WEBCHAT_BOT_TOKEN=替换为你的主BotToken
 Environment=WEBCHAT_TOKEN_KEY=替换为Fernet生成的固定密钥
 Environment=WEBCHAT_INTERNAL_TOKEN=替换为API和Bot共用的随机长字符串
-ExecStart=/www/wwwroot/webchat/venv/bin/python /www/wwwroot/webchat/api_server.py
+ExecStart=/www/wwwroot/webchat/venv/bin/gunicorn -k gthread -w 2 --threads 16 -b 127.0.0.1:5055 "api.app:create_app()"
 Restart=always
 RestartSec=3
 
