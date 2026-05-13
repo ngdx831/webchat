@@ -49,6 +49,16 @@ class StaticProjectHygieneTests(unittest.TestCase):
             operations,
         )
 
+    def test_message_handlers_close_db_connections_and_log_download_failures(self):
+        source = (ROOT / "bot" / "handlers" / "messages.py").read_text(encoding="utf-8")
+
+        self.assertIn("import contextlib", source)
+        self.assertIn("logger = logging.getLogger(__name__)", source)
+        self.assertIn("with contextlib.closing(dbm.get_conn(DB_PATH)) as conn:", source)
+        self.assertNotIn('print(f"下载', source)
+        self.assertGreaterEqual(source.count("logger.warning("), 4)
+        self.assertIn("exc_info=True", source)
+
 
 if __name__ == "__main__":
     unittest.main()

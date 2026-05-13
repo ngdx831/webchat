@@ -1,5 +1,7 @@
 import asyncio
+import contextlib
 import json
+import logging
 import uuid
 from typing import Any, Dict, Optional
 
@@ -22,14 +24,21 @@ from ..relay import (
 from ..runtime import dp
 
 
+logger = logging.getLogger(__name__)
+
+
 async def handle_customer_private_message(msg: Message, active_bot: Bot, binding: Dict[str, Any]) -> None:
     if msg.from_user and msg.from_user.is_bot:
         return
     if msg.chat.type not in {"private"}:
         return
 
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
+    with contextlib.closing(dbm.get_conn(DB_PATH)) as conn:
+        dbm.init_db(conn)
+        return await _handle_customer_private_message_with_conn(conn, msg, active_bot, binding)
+
+
+async def _handle_customer_private_message_with_conn(conn, msg: Message, active_bot: Bot, binding: Dict[str, Any]) -> None:
     key = binding["key"]
     widget = dbm.widget_get(conn, key)
     if not widget_owner_enabled(conn, widget):
@@ -134,8 +143,12 @@ async def _finalize_webchat_note(group_id: str):
 
     _WEBCHAT_NOTE_BUF.pop(group_id, None)
 
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
+    with contextlib.closing(dbm.get_conn(DB_PATH)) as conn:
+        dbm.init_db(conn)
+        return await _finalize_webchat_note_with_conn(conn, media_list, caption, session_id, from_name)
+
+
+async def _finalize_webchat_note_with_conn(conn, media_list, caption, session_id, from_name):
     session = dbm.session_get(conn, session_id)
     if not session:
         return
@@ -157,8 +170,8 @@ async def _finalize_webchat_note(group_id: str):
                 "file_id": m["file_id"],
                 "local_path": rel_path,
             })
-        except Exception as e:
-            print(f"下载媒体失败: {m['file_id']}, {e}")
+        except Exception:
+            logger.warning("下载媒体失败: file_id=%s", m["file_id"], exc_info=True)
 
     if not downloaded_media:
         return
@@ -238,9 +251,12 @@ async def handle_forum_topic_reply(msg: Message, bot: Bot):
     if msg.chat.type != "supergroup":
         return
 
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
+    with contextlib.closing(dbm.get_conn(DB_PATH)) as conn:
+        dbm.init_db(conn)
+        return await _handle_forum_topic_reply_with_conn(conn, msg)
 
+
+async def _handle_forum_topic_reply_with_conn(conn, msg: Message):
     session = dbm.session_get_by_thread(conn, int(msg.chat.id), int(msg.message_thread_id))
     if not session:
         return
@@ -301,24 +317,24 @@ async def handle_forum_topic_reply(msg: Message, bot: Bot):
         kind = "photo"
         try:
             local_path = await save_webchat_media(file_id, p.file_unique_id)
-        except Exception as e:
-            print(f"下载图片失败: {e}")
+        except Exception:
+            logger.warning("下载图片失败: file_id=%s", file_id, exc_info=True)
     elif msg.video:
         v = msg.video
         file_id = v.file_id
         kind = "video"
         try:
             local_path = await save_webchat_media(file_id, v.file_unique_id)
-        except Exception as e:
-            print(f"下载视频失败: {e}")
+        except Exception:
+            logger.warning("下载视频失败: file_id=%s", file_id, exc_info=True)
     elif msg.document:
         d = msg.document
         file_id = d.file_id
         kind = "document"
         try:
             local_path = await save_webchat_media(file_id, d.file_unique_id)
-        except Exception as e:
-            print(f"下载文档失败: {e}")
+        except Exception:
+            logger.warning("下载文档失败: file_id=%s", file_id, exc_info=True)
 
     if file_id:
         event_id = dbm.event_add(
