@@ -7,12 +7,13 @@ from config import BOT_TOKEN, DB_PATH
 
 from . import handlers  # noqa: F401  # importing registers handlers on dp
 from .customer_bots import activate_customer_bot_binding, shutdown_customer_bots
-from .runtime import bot, dp
+from .runtime import dp, get_main_bot
 
 
 async def main() -> None:
     if not BOT_TOKEN:
         raise RuntimeError("WEBCHAT_BOT_TOKEN not set")
+    main_bot = get_main_bot()
     conn = dbm.get_conn(DB_PATH)
     dbm.init_db(conn)
     for binding in dbm.bot_binding_list(conn, enabled_only=True):
@@ -28,9 +29,9 @@ async def main() -> None:
         except Exception as exc:
             print(f"Load customer bot failed: key={binding.get('key')}, id={binding.get('id')}, error={exc}")
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(main_bot)
     finally:
         await shutdown_customer_bots()
 
 
-__all__ = ["main", "bot", "dp"]
+__all__ = ["main", "dp"]

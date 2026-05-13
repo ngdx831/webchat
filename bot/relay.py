@@ -12,7 +12,7 @@ from config import API_HOST, API_PORT, RESOLVED_INTERNAL_TOKEN
 
 from .customer_bots import CUSTOMER_BOTS_BY_BINDING_ID
 from .media import abs_public_path
-from .runtime import bot
+from .runtime import get_main_bot
 from .validators import html_escape
 
 
@@ -83,6 +83,7 @@ async def ensure_support_thread(conn, session: Dict[str, Any], widget: Dict[str,
     display_name = widget.get("display_name") or key
     forum_chat_id = int(widget["forum_chat_id"])
     topic_name = _make_topic_name(display_name, key, session.get("channel") or "web")
+    bot = get_main_bot()
     topic = await bot.create_forum_topic(chat_id=forum_chat_id, name=topic_name)
     thread_id = int(topic.message_thread_id)
     dbm.session_set_thread(conn, session["session_id"], thread_id)
@@ -109,6 +110,7 @@ async def ensure_support_thread(conn, session: Dict[str, Any], widget: Dict[str,
 
 async def send_support_text(forum_chat_id: int, thread_id: int, text: str, label: str = "客户") -> None:
     body = f"👤 <b>{html_escape(label)}</b>：\n{html_escape(text)}"
+    bot = get_main_bot()
     await bot.send_message(
         chat_id=forum_chat_id,
         message_thread_id=thread_id,
@@ -121,6 +123,7 @@ async def send_support_text(forum_chat_id: int, thread_id: int, text: str, label
 async def send_support_media(forum_chat_id: int, thread_id: int, kind: str, rel_path: str, caption: str = "") -> None:
     path = abs_public_path(rel_path)
     cap = caption or ""
+    bot = get_main_bot()
     if kind == "photo":
         await bot.send_photo(chat_id=forum_chat_id, message_thread_id=thread_id, photo=FSInputFile(path), caption=cap)
     elif kind == "video":

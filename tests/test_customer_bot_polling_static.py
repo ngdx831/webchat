@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 from pathlib import Path
 import unittest
 
@@ -19,6 +22,24 @@ class CustomerBotPollingStaticTests(unittest.TestCase):
         branch = source[source.index("customer_bot = CUSTOMER_BOTS_BY_BINDING_ID"):]
         self.assertNotIn("customer_bot = Bot(", branch)
         self.assertIn("logger.warning", branch)
+
+    def test_handlers_import_without_main_bot_token(self):
+        env = os.environ.copy()
+        env["WEBCHAT_BOT_TOKEN"] = ""
+        env.setdefault("WEBCHAT_TOKEN_KEY", "45_3WKFv7XuSizf8ugfEGwANpINcSQz08wQiLKvyxfE=")
+        env.setdefault("WEBCHAT_INTERNAL_TOKEN", "test-internal-token")
+
+        result = subprocess.run(
+            [sys.executable, "-c", "import bot.handlers; print('ok')"],
+            cwd=ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("ok", result.stdout)
 
 
 if __name__ == "__main__":
