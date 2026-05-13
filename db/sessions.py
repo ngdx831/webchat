@@ -2,10 +2,10 @@ import hmac
 import json
 import secrets
 import sqlite3
-from datetime import timedelta
+import time
 from typing import Any, Dict, List, Optional
 
-from .connection import _utc_now, _utc_now_iso
+from .connection import _utc_now_ts
 
 
 def session_get(conn: sqlite3.Connection, session_id: str) -> Optional[Dict[str, Any]]:
@@ -34,13 +34,13 @@ def session_create_if_missing(
 ) -> bool:
     if conn.execute("SELECT 1 FROM sessions WHERE session_id=? LIMIT 1", (session_id,)).fetchone():
         return False
-    now = _utc_now_iso()
+    now = _utc_now_ts()
     conn.execute(
         """
         INSERT INTO sessions(
             session_id, key, forum_chat_id, thread_id, channel, source_code,
             visitor_id, customer_chat_id, bot_binding_id, customer_status,
-            marked_by, marked_at, created_at, last_activity_at
+            marked_by, marked_ts, created_ts, last_activity_ts
         )
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
@@ -56,7 +56,7 @@ def session_create_if_missing(
             int(bot_binding_id) if bot_binding_id is not None else None,
             "none",
             "",
-            "",
+            0,
             now,
             now,
         ),
@@ -70,7 +70,7 @@ def session_find_customer(conn: sqlite3.Connection, bot_binding_id: int, custome
         """
         SELECT * FROM sessions
         WHERE bot_binding_id=? AND customer_chat_id=?
-        ORDER BY created_at DESC
+        ORDER BY created_ts DESC
         LIMIT 1
         """,
         (int(bot_binding_id), int(customer_chat_id)),
@@ -79,7 +79,7 @@ def session_find_customer(conn: sqlite3.Connection, bot_binding_id: int, custome
 
 
 def session_touch(conn: sqlite3.Connection, session_id: str) -> None:
-    conn.execute("UPDATE sessions SET last_activity_at=? WHERE session_id=?", (_utc_now_iso(), session_id))
+    conn.execute("UPDATE sessions SET last_activity_ts=? WHERE session_id=?", (_utc_now_ts(), session_id))
     conn.commit()
 
 
@@ -94,15 +94,15 @@ def session_by_thread(conn: sqlite3.Connection, forum_chat_id: int, thread_id: i
 
 
 def sessions_expired(conn: sqlite3.Connection, max_age_seconds: int, idle_seconds: int) -> List[Dict[str, Any]]:
-    now = _utc_now()
-    created_before = (now - timedelta(seconds=int(max_age_seconds))).isoformat()
-    idle_before = (now - timedelta(seconds=int(idle_seconds))).isoformat()
+    now = int(time.time())
+    created_before = now - int(max_age_seconds)
+    idle_before = now - int(idle_seconds)
     rows = conn.execute(
         """
         SELECT * FROM sessions
-        WHERE created_at < ?
-           OR COALESCE(NULLIF(last_activity_at, ''), created_at) < ?
-        ORDER BY created_at ASC
+        WHERE created_ts < ?
+           OR COALESCE(NULLIF(last_activity_ts, 0), created_ts) < ?
+        ORDER BY created_ts ASC
         """,
         (created_before, idle_before),
     ).fetchall()
@@ -140,11 +140,11 @@ def session_get_media_paths(conn: sqlite3.Connection, session_id: str) -> List[s
     return out
 
 
-def session_get_or_create_stream_token(conn: sqlite3.Connection, session_id: str) -> str:
-    """返回此 session 用于 SSE 鉴权的 token,不存在时创建并写库。
+def session_get_or_create_access_token(conn: sqlite3.Connection, session_id: str) -> str:
+    """返回此 session 的统一访问 token,不存在时创建并写库。
 
-    旧 schema(无 stream_token 列)下静默退化为空字符串;前端拿不到 token 就走
-    无 token 路径(只能本地访问,Nginx 反代场景仍受限于 API_HOST=127.0.0.1)。
+    当前仍复用旧字段名 stream_token,但语义已经扩展为 history/SSE/media
+    共同使用的 session access token。
     """
     try:
         row = conn.execute(
@@ -174,7 +174,7 @@ def session_get_or_create_stream_token(conn: sqlite3.Connection, session_id: str
         return ""
 
 
-def session_verify_stream_token(conn: sqlite3.Connection, session_id: str, token: str) -> bool:
+def session_verify_access_token(conn: sqlite3.Connection, session_id: str, token: str) -> bool:
     if not token:
         return False
     try:
@@ -188,13 +188,18 @@ def session_verify_stream_token(conn: sqlite3.Connection, session_id: str, token
         return False
     stored = (row["stream_token"] or "").strip() if isinstance(row, sqlite3.Row) else ""
     if not stored:
-        # 旧 session 没有 token,允许通过以保持向后兼容(浏览器端会自动 reconnect 拿新 token)。
-        return True
+        return False
     return hmac.compare_digest(stored, str(token))
 
 
+def session_get_or_create_stream_token(conn: sqlite3.Connection, session_id: str) -> str:
+    return session_get_or_create_access_token(conn, session_id)
+
+
+def session_verify_stream_token(conn: sqlite3.Connection, session_id: str, token: str) -> bool:
+    return session_verify_access_token(conn, session_id, token)
+
+
 def session_delete(conn: sqlite3.Connection, session_id: str) -> None:
-    conn.execute("DELETE FROM events WHERE session_id=?", (session_id,))
-    conn.execute("DELETE FROM media_assets WHERE session_id=?", (session_id,))
     conn.execute("DELETE FROM sessions WHERE session_id=?", (session_id,))
     conn.commit()

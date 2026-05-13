@@ -9,7 +9,7 @@ from config import CUSTOMER_WAITING_HINT, MAX_TEXT_LENGTH
 from shared.errors import TelegramAPIError
 from shared.event_payload import event_row_to_payload
 
-from ..db_helpers import enrich_media_payload, get_conn, session_key_error, web_widget_or_error
+from ..db_helpers import enrich_media_payload, get_conn, session_access_error, session_key_error, web_widget_or_error
 from ..rate_limit import allow_rate, client_ip_for_rate_limit
 from ..telegram_client import ensure_thread, tg_send_message
 from ..validators import (
@@ -65,6 +65,16 @@ def api_msg(key: str):
     error = session_key_error(existing_session, kk)
     if error:
         return error
+    submitted_token = (
+        data.get("token")
+        or data.get("session_access_token")
+        or data.get("stream_token")
+        or ""
+    ).strip()
+    if existing_session and (existing_session.get("stream_token") or "").strip():
+        error = session_access_error(conn, session_id, submitted_token)
+        if error:
+            return error
 
     forum_chat_id = int(w["forum_chat_id"])
     display_name = w.get("display_name") or kk
@@ -102,7 +112,7 @@ def api_msg(key: str):
         )
 
     # 记录事件（用户）
-    dbm.event_add(conn, session_id, role="user", kind="text", text=text, file_id="", caption="", from_name="")
+    event_id = dbm.event_add(conn, session_id, role="user", kind="text", text=text, file_id="", caption="", from_name="")
 
     # 发到 TG（离线时标识一下）
     prefix = "👤 <b>客户（离线留言）</b>：" if enabled == 0 else "👤 <b>客户</b>："
@@ -129,8 +139,14 @@ def api_msg(key: str):
             logger.exception("tg_send_message failed after retry")
             return json_error(502, "TG_SEND_FAILED")
 
-    stream_token = dbm.session_get_or_create_stream_token(conn, session_id)
-    return jsonify({"ok": True, "session_id": session_id, "stream_token": stream_token})
+    access_token = dbm.session_get_or_create_access_token(conn, session_id)
+    return jsonify({
+        "ok": True,
+        "session_id": session_id,
+        "event_id": event_id,
+        "session_access_token": access_token,
+        "stream_token": access_token,
+    })
 
 
 @bp.get("/api/history/<key>")
@@ -142,6 +158,7 @@ def api_history(key: str):
     session_id = (request.args.get("session_id") or "").strip()
     if not session_id:
         return json_error(400, "NO_SESSION")
+    access_token = (request.args.get("token") or request.args.get("session_access_token") or "").strip()
 
     conn = get_conn()
     w, error = web_widget_or_error(conn, kk)
@@ -154,6 +171,12 @@ def api_history(key: str):
     error = session_key_error(s, kk)
     if error:
         return error
+    error = session_access_error(conn, session_id, access_token)
+    if error:
+        return error
 
-    events = [enrich_media_payload(conn, event_row_to_payload(ev)) for ev in dbm.events_list(conn, session_id, limit=200)]
+    events = [
+        enrich_media_payload(conn, event_row_to_payload(ev), access_token=access_token)
+        for ev in dbm.events_list(conn, session_id, limit=200)
+    ]
     return jsonify({"ok": True, "events": events})

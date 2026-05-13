@@ -11,7 +11,7 @@ def event_row_to_payload(ev: Dict[str, Any]) -> Dict[str, Any]:
         "role": ev.get("role"),
         "kind": kind,
         "from_name": ev.get("from_name") or "",
-        "created_at": ev.get("created_at") or "",
+        "created_at": int(ev.get("created_ts") or 0),
         "text": ev.get("text") or "",
         "caption": ev.get("caption") or "",
         "file_id": ev.get("file_id") or "",

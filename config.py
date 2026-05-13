@@ -1,5 +1,9 @@
 # /www/wwwroot/webchat/config.py
+import logging
 import os
+
+
+logger = logging.getLogger(__name__)
 
 # 项目根目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -12,12 +16,43 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 # 主 Bot Token 只从环境变量读取，不要把真实 Token 写入代码仓库。
 BOT_TOKEN = os.getenv("WEBCHAT_BOT_TOKEN", "").strip()
 
-# 修改这里：多个管理员 Telegram 用户 ID
-ADMIN_IDS = {
+# 客户侧 Bot Token 落盘加密密钥。必须是 Fernet.generate_key() 生成的
+# 32 字节 URL-safe base64 字符串。
+WEBCHAT_TOKEN_KEY = os.getenv("WEBCHAT_TOKEN_KEY", "").strip()
+if not WEBCHAT_TOKEN_KEY:
+    raise RuntimeError(
+        "WEBCHAT_TOKEN_KEY is required. Generate one with: "
+        "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+    )
+
+# 默认管理员 Telegram 用户 ID；生产环境建议用 WEBCHAT_ADMIN_IDS 覆盖。
+_DEFAULT_ADMIN_IDS = {
     1316912879,
     8257830578,
     8154319235,
 }
+
+
+def _parse_admin_ids(raw: str):
+    raw = (raw or "").strip()
+    if not raw:
+        return set(_DEFAULT_ADMIN_IDS)
+    ids = set()
+    invalid = []
+    for item in raw.split(","):
+        value = item.strip()
+        if not value:
+            continue
+        try:
+            ids.add(int(value))
+        except ValueError:
+            invalid.append(value)
+    if invalid:
+        logger.warning("Invalid WEBCHAT_ADMIN_IDS entries ignored: %s", ",".join(invalid))
+    return ids
+
+
+ADMIN_IDS = _parse_admin_ids(os.getenv("WEBCHAT_ADMIN_IDS", ""))
 
 # ===================== 2) 数据库路径 =====================
 

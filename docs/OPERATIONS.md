@@ -1,9 +1,10 @@
 # 部署与运维手册
 
-本文档用于生产环境部署和日常维护。项目需要同时运行两个进程：
+本文档用于生产环境部署和日常维护。项目需要同时运行两个常驻进程，并建议配置一个定时清理任务：
 
 - `api_server.py`：Flask API，负责网页请求、SSE 推送和媒体代理。
 - `tg_bot.py`：Telegram Bot，负责管理命令和客服回复。
+- `python -m api.cleanup_worker`：定时执行过期会话和媒体清理，避免普通 HTTP 请求被清理任务拖慢。
 
 ## 部署前准备
 
@@ -73,8 +74,10 @@ systemctl start webchat-api webchat-bot
 
 | 配置项 | 建议 |
 | --- | --- |
-| `WEBCHAT_BOT_TOKEN` | 通过环境变量提供主 Telegram Bot Token。 |
-| `ADMIN_IDS` | 填写管理员 Telegram 用户 ID。 |
+| `WEBCHAT_BOT_TOKEN` | 通过环境变量提供主 Telegram Bot Token，不写入 `config.py`。 |
+| `WEBCHAT_TOKEN_KEY` | 必填。客户侧 Bot Token 的落盘加密密钥，使用 `Fernet.generate_key()` 生成并固定保存。 |
+| `WEBCHAT_INTERNAL_TOKEN` | 必填。`/internal/notify` 的 Bearer Token，API 服务和 Bot 服务必须一致。 |
+| `WEBCHAT_ADMIN_IDS` | 管理员 Telegram 用户 ID，逗号分隔，例如 `1316912879,8257830578`。 |
 | `API_HOST` | 生产环境建议保持 `127.0.0.1`。 |
 | `API_PORT` | 默认 `5055`。 |
 | `DB_PATH` | 默认 `data/webchat.db`。 |
@@ -84,9 +87,9 @@ systemctl start webchat-api webchat-bot
 | `MEDIA_TTL_SECONDS` | 本地媒体文件超过该时间后自动删除，默认约 3 天。 |
 | `CUSTOMER_WAITING_HINT` | 客户对话界面的等待提示文案。 |
 
-安全建议：不要把真实 `WEBCHAT_BOT_TOKEN` 发布到公开仓库；如曾经提交过真实 Token，应立即在 BotFather 重置。
+安全建议：不要把真实 `WEBCHAT_BOT_TOKEN` 发布到公开仓库，也不要写入 `config.py`；如曾经提交过真实 Token，应立即在 BotFather 重置。`WEBCHAT_TOKEN_KEY` 换值后，数据库中已有的客户侧 Bot Token 密文无法继续解密，生产环境应固定保存并纳入密钥备份。
 
-`ADMIN_IDS` 是管理员初始化来源。对应 Telegram 用户首次 `/start` 或使用命令时会写入 `users` 表，并同步为 `admin` 角色。
+`WEBCHAT_ADMIN_IDS` 是管理员初始化来源。对应 Telegram 用户首次 `/start` 或使用命令时会写入 `users` 表，并同步为 `admin` 角色。未设置该环境变量时，程序会使用 `config.py` 里的默认管理员列表；生产环境建议显式设置，避免不同环境误授权。
 
 ## 用户角色初始化与权限
 
@@ -110,6 +113,7 @@ systemctl start webchat-api webchat-bot
 ```
 
 如果用户反馈网页入口返回 `WEB_DISABLED`，先用 `/userget` 查看角色和禁用状态；普通用户需要升级为 `vip` 或 `admin` 后才能使用网页客服能力。
+`/kls` 不带参数时只查看当前账号名下的所有 key；管理员排查其他账号时，使用 `/kls <telegram_user_id>` 查看对方入口列表，再用 `/adminkeyinfo <key>` 查看入口详情。`/userkeys <telegram_user_id>` 保留为兼容管理命令。
 
 ## 手动启动
 
@@ -152,6 +156,8 @@ User=www
 Group=www
 WorkingDirectory=/www/wwwroot/webchat
 Environment=WEBCHAT_BOT_TOKEN=替换为你的主BotToken
+Environment=WEBCHAT_TOKEN_KEY=替换为Fernet生成的固定密钥
+Environment=WEBCHAT_INTERNAL_TOKEN=替换为API和Bot共用的随机长字符串
 ExecStart=/www/wwwroot/webchat/venv/bin/python /www/wwwroot/webchat/api_server.py
 Restart=always
 RestartSec=3
@@ -175,6 +181,8 @@ User=www
 Group=www
 WorkingDirectory=/www/wwwroot/webchat
 Environment=WEBCHAT_BOT_TOKEN=替换为你的主BotToken
+Environment=WEBCHAT_TOKEN_KEY=替换为Fernet生成的固定密钥
+Environment=WEBCHAT_INTERNAL_TOKEN=替换为API和Bot共用的随机长字符串
 ExecStart=/www/wwwroot/webchat/venv/bin/python /www/wwwroot/webchat/tg_bot.py
 Restart=always
 RestartSec=3
@@ -189,6 +197,46 @@ WantedBy=multi-user.target
 systemctl daemon-reload
 systemctl enable --now webchat-api
 systemctl enable --now webchat-bot
+```
+
+### 定时清理任务
+
+清理任务已经从 API 请求链路中拆出。建议用 systemd timer 或 cron 单独运行：
+
+```ini
+[Unit]
+Description=WebChat expired cleanup
+
+[Service]
+Type=oneshot
+User=www
+Group=www
+WorkingDirectory=/www/wwwroot/webchat
+Environment=WEBCHAT_BOT_TOKEN=替换为你的主BotToken
+Environment=WEBCHAT_TOKEN_KEY=替换为Fernet生成的固定密钥
+ExecStart=/www/wwwroot/webchat/venv/bin/python -m api.cleanup_worker
+```
+
+示例 timer `/etc/systemd/system/webchat-cleanup.timer`：
+
+```ini
+[Unit]
+Description=Run WebChat cleanup every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=webchat-cleanup.service
+
+[Install]
+WantedBy=timers.target
+```
+
+启用：
+
+```bash
+systemctl daemon-reload
+systemctl enable --now webchat-cleanup.timer
 ```
 
 查看状态和日志：
@@ -339,6 +387,8 @@ location / {
 /kls
 ```
 
+`/kls` 只列出当前账号自己的所有入口。管理员需要查看其他账号时，执行 `/kls <telegram_user_id>`，必要时再执行 `/adminkeyinfo <key>` 查看详情。
+
 下班：
 
 ```text
@@ -388,7 +438,7 @@ VIP 或管理员查看来源统计和维护快速回复：
 
 `/end` 会删除或关闭客服群话题、删除会话事件、删除该会话的本地媒体。
 
-自动过期清理也会执行同样的会话收尾动作：会话开始超过约 2 个月，或最后一次客户/客服消息超过约 2 个月后，系统会尝试删除或关闭对应 Telegram 话题，并删除会话和聊天事件。本地媒体文件默认约 3 天后单独过期，过期后网页端显示占位提示。
+定时过期清理会执行同样的会话收尾动作：会话开始超过约 2 个月，或最后一次客户/客服消息超过约 2 个月后，系统会尝试删除或关闭对应 Telegram 话题，并删除会话和聊天事件。本地媒体文件默认约 3 天后单独过期，过期后网页端显示占位提示。
 
 ## 客户机器人 Token 安全
 
@@ -462,6 +512,7 @@ python -m compileall api_server.py tg_bot.py config.py api bot db shared
 - VIP 最多可创建 5 个 `key`，第 6 个应被拒绝。
 - 管理员可通过 `/userset` 调整角色，通过 `/userban` 和 `/userunban` 改变用户禁用状态。
 - 普通用户入口访问网页端返回 `WEB_DISABLED`；升级 VIP 后网页端可访问。
+- `/kls` 只返回当前账号自己的入口；管理员查看他人入口时必须带对方账号，例如 `/kls <telegram_user_id>`。
 - `/tokenadd <key>` 能热绑定客户侧机器人，绑定后不重启服务也能响应。
 - 重启 `tg_bot.py` 后，客户侧机器人绑定能从 `bot_bindings` 恢复。
 - 客户侧机器人 `/start` 显示对应 `welcome_text`；携带 `/start link123` 时记录 Telegram 来源点击。

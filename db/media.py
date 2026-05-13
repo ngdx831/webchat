@@ -1,8 +1,9 @@
+import json
 import sqlite3
-from datetime import timedelta
+import time
 from typing import Any, Dict, List, Optional
 
-from .connection import _utc_now, _utc_now_iso, _iso_after
+from .connection import _ts_after, _utc_now_ts
 
 
 def media_asset_upsert(
@@ -13,19 +14,20 @@ def media_asset_upsert(
     local_path: str,
     ttl_seconds: int = 3 * 24 * 60 * 60,
 ) -> int:
-    now = _utc_now_iso()
-    expires_at = _iso_after(ttl_seconds)
+    now = _utc_now_ts()
+    expires_ts = _ts_after(ttl_seconds)
     conn.execute(
         """
-        INSERT INTO media_assets(session_id, file_id, kind, local_path, created_at, expires_at, deleted_at)
+        INSERT INTO media_assets(session_id, file_id, kind, local_path, created_ts, expires_ts, deleted_ts)
         VALUES(?,?,?,?,?,?,?)
         ON CONFLICT(file_id) DO UPDATE SET
             session_id=excluded.session_id,
             kind=excluded.kind,
             local_path=excluded.local_path,
-            expires_at=excluded.expires_at
+            expires_ts=excluded.expires_ts,
+            deleted_ts=0
         """,
-        (session_id, file_id, kind or "media", local_path or "", now, expires_at, ""),
+        (session_id, file_id, kind or "media", local_path or "", now, expires_ts, 0),
     )
     conn.commit()
     row = conn.execute("SELECT id FROM media_assets WHERE file_id=? LIMIT 1", (file_id,)).fetchone()
@@ -37,18 +39,62 @@ def media_asset_get_by_file_id(conn: sqlite3.Connection, file_id: str) -> Option
     return dict(row) if row else None
 
 
+def media_owner_session_id(conn: sqlite3.Connection, file_id: str) -> Optional[str]:
+    file_id = (file_id or "").strip()
+    if not file_id:
+        return None
+
+    asset = media_asset_get_by_file_id(conn, file_id)
+    if asset and asset.get("session_id"):
+        return str(asset["session_id"])
+
+    row = conn.execute(
+        """
+        SELECT session_id FROM events
+        WHERE file_id=?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (file_id,),
+    ).fetchone()
+    if row and row["session_id"]:
+        return str(row["session_id"])
+
+    pat1 = f'%"file_id":"{file_id}"%'
+    pat2 = f'%"file_id": "{file_id}"%'
+    rows = conn.execute(
+        """
+        SELECT session_id, media_json FROM events
+        WHERE media_json LIKE ? OR media_json LIKE ?
+        ORDER BY id DESC
+        LIMIT 20
+        """,
+        (pat1, pat2),
+    ).fetchall()
+    for row in rows:
+        try:
+            media = json.loads(row["media_json"] or "[]")
+        except Exception:
+            continue
+        if not isinstance(media, list):
+            continue
+        for item in media:
+            if isinstance(item, dict) and (item.get("file_id") or "") == file_id:
+                return str(row["session_id"])
+    return None
+
+
 def media_assets_expired(conn: sqlite3.Connection, media_ttl_seconds: int) -> List[Dict[str, Any]]:
-    cutoff = (_utc_now() - timedelta(seconds=int(media_ttl_seconds))).isoformat()
-    now = _utc_now_iso()
+    cutoff = int(time.time()) - int(media_ttl_seconds)
+    now = _utc_now_ts()
     rows = conn.execute(
         """
         SELECT * FROM media_assets
-        WHERE COALESCE(deleted_at, '')=''
-          AND (
-            created_at < ?
-            OR (COALESCE(expires_at, '')<>'' AND expires_at < ?)
-          )
-        ORDER BY created_at ASC
+        WHERE COALESCE(deleted_ts, 0)=0
+          AND created_ts < ?
+          AND COALESCE(expires_ts, 0)<>0
+          AND expires_ts < ?
+        ORDER BY created_ts ASC
         """,
         (cutoff, now),
     ).fetchall()
@@ -56,5 +102,5 @@ def media_assets_expired(conn: sqlite3.Connection, media_ttl_seconds: int) -> Li
 
 
 def media_asset_mark_deleted(conn: sqlite3.Connection, file_id: str) -> None:
-    conn.execute("UPDATE media_assets SET deleted_at=? WHERE file_id=?", (_utc_now_iso(), file_id))
+    conn.execute("UPDATE media_assets SET deleted_ts=? WHERE file_id=?", (_utc_now_ts(), file_id))
     conn.commit()

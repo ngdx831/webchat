@@ -1,6 +1,6 @@
 import sqlite3
 
-from .connection import _utc_now_iso
+from .connection import _utc_now_ts
 from .sessions import session_get
 
 
@@ -11,11 +11,11 @@ def customer_mark_set(conn: sqlite3.Connection, session_id: str, mark: str, mark
     session = session_get(conn, session_id)
     if not session:
         return False
-    now = _utc_now_iso()
+    now = _utc_now_ts()
     conn.execute("DELETE FROM customer_marks WHERE session_id=? AND mark=?", (session_id, mark))
     conn.execute(
         """
-        INSERT INTO customer_marks(session_id, key, source_code, channel, mark, marked_by, marked_at)
+        INSERT INTO customer_marks(session_id, key, source_code, channel, mark, marked_by, marked_ts)
         VALUES(?,?,?,?,?,?,?)
         """,
         (
@@ -34,7 +34,7 @@ def customer_mark_set(conn: sqlite3.Connection, session_id: str, mark: str, mark
         current = session.get("customer_status") or "none"
         status = "deal" if current == "deal" else "valid"
     conn.execute(
-        "UPDATE sessions SET customer_status=?, marked_by=?, marked_at=? WHERE session_id=?",
+        "UPDATE sessions SET customer_status=?, marked_by=?, marked_ts=? WHERE session_id=?",
         (status, marked_by or "", now, session_id),
     )
     conn.commit()

@@ -11,8 +11,16 @@ def _utc_now_iso() -> str:
     return _utc_now().isoformat()
 
 
+def _utc_now_ts() -> int:
+    return int(_utc_now().timestamp())
+
+
 def _iso_after(seconds: int) -> str:
     return (_utc_now() + timedelta(seconds=int(seconds))).isoformat()
+
+
+def _ts_after(seconds: int) -> int:
+    return _utc_now_ts() + int(seconds)
 
 
 def get_conn(path: str) -> sqlite3.Connection:

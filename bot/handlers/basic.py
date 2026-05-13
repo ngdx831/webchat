@@ -40,7 +40,7 @@ async def cmd_start(msg: Message, command: CommandObject, bot: Bot):
             "管理命令：\n"
             "• /kadd <key> <forum_chat_id> <显示名>\n"
             "• /kdel <key>\n"
-            "• /kls   （含在线/离线状态）\n"
+            "• /kls [telegram_user_id]\n"
             "• /koff <key> [离线提示]\n"
             "• /kon <key>\n"
             "• /kmsg <key> <离线提示>\n"
@@ -111,6 +111,7 @@ async def cmd_help(msg: Message, bot: Bot):
         "User commands:",
         "/keyadd <key> <display_name>",
         "/myinfo",
+        "/kls",
         "/keyinfo <key>",
         "/keydel <key>",
         "/tokenadd <key>",
@@ -151,6 +152,7 @@ async def cmd_adminhelp(msg: Message, bot: Bot):
         "/userset <telegram_user_id> <normal|vip|admin>\n"
         "/userban <telegram_user_id>\n"
         "/userunban <telegram_user_id>\n"
+        "/kls <telegram_user_id>\n"
         "/userkeys <telegram_user_id>\n"
         "/adminkeyinfo <key>\n"
         "/adminkeydel <key>\n"

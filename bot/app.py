@@ -6,7 +6,7 @@ import db as dbm
 from config import BOT_TOKEN, DB_PATH
 
 from . import handlers  # noqa: F401  # importing registers handlers on dp
-from .customer_bots import activate_customer_bot_binding
+from .customer_bots import activate_customer_bot_binding, shutdown_customer_bots
 from .runtime import bot, dp
 
 
@@ -27,7 +27,10 @@ async def main() -> None:
             print(f"Loaded customer bot @{binding.get('bot_username') or me.username or binding['id']} for key={binding['key']}")
         except Exception as exc:
             print(f"Load customer bot failed: key={binding.get('key')}, id={binding.get('id')}, error={exc}")
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await shutdown_customer_bots()
 
 
 __all__ = ["main", "bot", "dp"]

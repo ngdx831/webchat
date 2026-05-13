@@ -7,7 +7,7 @@ from flask import Blueprint, Response, request, stream_with_context
 import db as dbm
 from shared.event_payload import event_row_to_payload
 
-from ..db_helpers import enrich_media_payload, get_conn, web_widget_or_error
+from ..db_helpers import enrich_media_payload, get_conn, session_access_error, web_widget_or_error
 from ..sse import subscribe, unsubscribe
 from ..validators import json_error
 
@@ -32,13 +32,14 @@ def api_stream(session_id: str):
 
     conn = get_conn()
     session = dbm.session_get(conn, session_id)
-    if session:
-        _, error = web_widget_or_error(conn, session.get("key") or "")
-        if error:
-            return error
-        if not dbm.session_verify_stream_token(conn, session_id, token):
-            return json_error(401, "BAD_STREAM_TOKEN")
-    # session 不存在则允许订阅(首次连接;消息发送后会被自动创建)。
+    if not session:
+        return json_error(404, "SESSION_NOT_FOUND")
+    _, error = web_widget_or_error(conn, session.get("key") or "")
+    if error:
+        return error
+    error = session_access_error(conn, session_id, token)
+    if error:
+        return error
 
     # 队列上限调小:超过即视为客户端死,broadcast 时会被踢出。
     q: Queue = Queue(maxsize=50)
@@ -51,7 +52,7 @@ def api_stream(session_id: str):
                 conn2 = get_conn()
                 missed = dbm.events_since(conn2, session_id, since_id, limit=200)
                 for ev in missed:
-                    payload = enrich_media_payload(conn2, event_row_to_payload(ev))
+                    payload = enrich_media_payload(conn2, event_row_to_payload(ev), access_token=token)
                     yield f"event: msg\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
             except Exception:
                 logger.exception("sse replay error session=%s", session_id)

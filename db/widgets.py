@@ -1,7 +1,7 @@
 import sqlite3
 from typing import Any, Dict, List, Optional
 
-from .connection import _utc_now, _table_has_column, _widgets_key_col
+from .connection import _table_has_column, _utc_now_ts, _widgets_key_col
 
 
 def widget_add(
@@ -19,7 +19,7 @@ def widget_add(
             raise ValueError("KEY_EXISTS")
 
     try:
-        now_ts = int(_utc_now().timestamp())
+        now_ts = _utc_now_ts()
         conn.execute(
             f"INSERT INTO widgets({keycol}, owner_user_id, display_name, forum_chat_id, created_ts, updated_ts) VALUES(?,?,?,?,?,?) "
             f"ON CONFLICT({keycol}) DO UPDATE SET owner_user_id=excluded.owner_user_id, display_name=excluded.display_name, forum_chat_id=excluded.forum_chat_id, updated_ts=excluded.updated_ts",
@@ -27,9 +27,9 @@ def widget_add(
         )
     except Exception:
         conn.execute(
-            f"INSERT INTO widgets({keycol}, owner_user_id, forum_chat_id, display_name, enabled, offline_msg, offline_at) VALUES(?,?,?,?,?,?,?) "
+            f"INSERT INTO widgets({keycol}, owner_user_id, forum_chat_id, display_name, enabled, offline_msg, offline_ts) VALUES(?,?,?,?,?,?,?) "
             f"ON CONFLICT({keycol}) DO UPDATE SET owner_user_id=excluded.owner_user_id, forum_chat_id=excluded.forum_chat_id, display_name=excluded.display_name",
-            (key, owner_user_id, int(forum_chat_id), display_name, 1, "", ""),
+            (key, owner_user_id, int(forum_chat_id), display_name, 1, "", 0),
         )
     conn.commit()
 
@@ -46,7 +46,7 @@ def widget_get(conn: sqlite3.Connection, key: str) -> Optional[Dict[str, Any]]:
     owner_expr = "owner_user_id" if _table_has_column(conn, "widgets", "owner_user_id") else "NULL"
     enabled_expr = "enabled" if _table_has_column(conn, "widgets", "enabled") else "1"
     offmsg_expr = "offline_msg" if _table_has_column(conn, "widgets", "offline_msg") else "''"
-    offat_expr = "offline_at" if _table_has_column(conn, "widgets", "offline_at") else "''"
+    offat_expr = "offline_ts" if _table_has_column(conn, "widgets", "offline_ts") else "0"
     welcome_expr = "welcome_text" if _table_has_column(conn, "widgets", "welcome_text") else "''"
     cur = conn.execute(
         f"""
@@ -80,7 +80,7 @@ def widget_list(conn: sqlite3.Connection, limit: int = 200) -> List[Dict[str, An
     owner_expr = "owner_user_id" if _table_has_column(conn, "widgets", "owner_user_id") else "NULL"
     enabled_expr = "enabled" if _table_has_column(conn, "widgets", "enabled") else "1"
     offmsg_expr = "offline_msg" if _table_has_column(conn, "widgets", "offline_msg") else "''"
-    offat_expr = "offline_at" if _table_has_column(conn, "widgets", "offline_at") else "''"
+    offat_expr = "offline_ts" if _table_has_column(conn, "widgets", "offline_ts") else "0"
     welcome_expr = "welcome_text" if _table_has_column(conn, "widgets", "welcome_text") else "''"
     rows = conn.execute(
         f"""
@@ -112,7 +112,7 @@ def widget_list_by_owner(conn: sqlite3.Connection, owner_user_id: int, limit: in
     rows = conn.execute(
         f"""
         SELECT {keycol} as key, owner_user_id, forum_chat_id, display_name,
-               enabled, offline_msg, offline_at, welcome_text
+               enabled, offline_msg, offline_ts as offline_at, welcome_text
         FROM widgets
         WHERE owner_user_id=?
         ORDER BY {keycol} ASC
@@ -148,15 +148,15 @@ def widget_get_owned(conn: sqlite3.Connection, key: str, owner_user_id: int) -> 
 def widget_set_enabled(conn: sqlite3.Connection, key: str, enabled: int, offline_msg: Optional[str] = None) -> bool:
     keycol = _widgets_key_col(conn)
     enabled = 1 if int(enabled) else 0
-    now = _utc_now().isoformat(timespec="seconds")
+    now = _utc_now_ts()
     if enabled == 0:
         cur = conn.execute(
-            f"UPDATE widgets SET enabled=0, offline_msg=?, offline_at=? WHERE {keycol}=?",
+            f"UPDATE widgets SET enabled=0, offline_msg=?, offline_ts=? WHERE {keycol}=?",
             (offline_msg or "", now, key),
         )
     else:
         cur = conn.execute(
-            f"UPDATE widgets SET enabled=1, offline_at='' WHERE {keycol}=?",
+            f"UPDATE widgets SET enabled=1, offline_ts=0 WHERE {keycol}=?",
             (key,),
         )
     conn.commit()

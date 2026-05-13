@@ -1,0 +1,199 @@
+:root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --line: #d9dee7;
+      --text: #18212f;
+      --muted: #667085;
+      --brand: #1769e0;
+      --agent: #ffffff;
+      --user: #dbeafe;
+      --system: #eef2f7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      max-width: 760px;
+      margin: 0 auto;
+      background: var(--panel);
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+    }
+
+    header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .name {
+      font-size: 17px;
+      font-weight: 700;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .status {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    main {
+      overflow: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .msg {
+      width: fit-content;
+      max-width: min(82%, 560px);
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .msg.agent {
+      background: var(--agent);
+      align-self: flex-start;
+    }
+
+    .msg.user {
+      background: var(--user);
+      border-color: #bfdbfe;
+      align-self: flex-end;
+    }
+
+    .msg.system {
+      max-width: 100%;
+      background: var(--system);
+      color: var(--muted);
+      align-self: center;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .from {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .media {
+      display: block;
+      max-width: 100%;
+      width: min(360px, 100%);
+      max-height: 360px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f3f4f6;
+    }
+
+    .file-card,
+    .expired {
+      width: min(360px, 100%);
+      min-height: 86px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      display: grid;
+      align-items: center;
+      padding: 12px;
+      background: #f8fafc;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .note-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+      width: min(420px, 100%);
+    }
+
+    .quick {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 10px 12px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .quick button {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      height: 34px;
+      border-radius: 6px;
+      padding: 0 10px;
+      cursor: pointer;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    footer {
+      padding: 10px 12px 12px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      border-top: 0;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 42px;
+      max-height: 130px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      font: inherit;
+      line-height: 1.4;
+    }
+
+    .send {
+      width: 72px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    @media (max-width: 640px) {
+      .app {
+        border: 0;
+      }
+
+      .msg {
+        max-width: 90%;
+      }
+    }

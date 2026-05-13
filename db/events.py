@@ -1,7 +1,7 @@
 import sqlite3
 from typing import Any, Dict, List
 
-from .connection import _utc_now_iso
+from .connection import _utc_now_ts
 
 
 def ensure_system_event(conn: sqlite3.Connection, session_id: str, text: str, marker: str = "system") -> bool:
@@ -35,7 +35,7 @@ def event_add(
 ) -> int:
     cur = conn.execute(
         """
-        INSERT INTO events(session_id, role, kind, text, caption, file_id, file_name, from_name, local_path, media_json, created_at)
+        INSERT INTO events(session_id, role, kind, text, caption, file_id, file_name, from_name, local_path, media_json, created_ts)
         VALUES(?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
@@ -49,11 +49,11 @@ def event_add(
             from_name or "",
             local_path or "",
             media_json or "",
-            _utc_now_iso(),
+            _utc_now_ts(),
         ),
     )
     if touch_session:
-        conn.execute("UPDATE sessions SET last_activity_at=? WHERE session_id=?", (_utc_now_iso(), session_id))
+        conn.execute("UPDATE sessions SET last_activity_ts=? WHERE session_id=?", (_utc_now_ts(), session_id))
     conn.commit()
     return int(cur.lastrowid)
 

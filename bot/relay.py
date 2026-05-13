@@ -1,9 +1,10 @@
 import asyncio
+import logging
+import os
 from contextlib import suppress
 from typing import Any, Dict
 
 import requests
-from aiogram import Bot
 from aiogram.types import FSInputFile
 
 import db as dbm
@@ -14,6 +15,8 @@ from .media import abs_public_path
 from .runtime import bot
 from .validators import html_escape
 
+
+logger = logging.getLogger(__name__)
 
 API_NOTIFY_URL = f"http://{API_HOST}:{API_PORT}/internal/notify"
 
@@ -126,6 +129,24 @@ async def send_support_media(forum_chat_id: int, thread_id: int, kind: str, rel_
         await bot.send_document(chat_id=forum_chat_id, message_thread_id=thread_id, document=FSInputFile(path), caption=cap)
 
 
+async def _send_customer_media(customer_bot, chat_id: int, kind: str, rel_path: str, caption: str = "") -> None:
+    path = abs_public_path(rel_path or "")
+    if not rel_path or not os.path.exists(path):
+        await customer_bot.send_message(chat_id=chat_id, text=f"Media unavailable: {kind or 'file'}")
+        return
+
+    try:
+        if kind == "photo":
+            await customer_bot.send_photo(chat_id=chat_id, photo=FSInputFile(path), caption=caption or "")
+        elif kind == "video":
+            await customer_bot.send_video(chat_id=chat_id, video=FSInputFile(path), caption=caption or "")
+        else:
+            await customer_bot.send_document(chat_id=chat_id, document=FSInputFile(path), caption=caption or "")
+    except Exception as exc:
+        logger.warning("customer media send failed: chat_id=%s kind=%s path=%s error=%s", chat_id, kind, rel_path, exc)
+        await customer_bot.send_message(chat_id=chat_id, text=f"Media unavailable: {kind or 'file'}")
+
+
 async def send_event_to_customer(conn, session: Dict[str, Any], event: Dict[str, Any]) -> None:
     if session.get("channel") != "telegram":
         await notify_web(session["session_id"], event)
@@ -134,10 +155,12 @@ async def send_event_to_customer(conn, session: Dict[str, Any], event: Dict[str,
     binding_id = session.get("bot_binding_id")
     customer_bot = CUSTOMER_BOTS_BY_BINDING_ID.get(int(binding_id or 0))
     if not customer_bot:
-        binding = dbm.bot_binding_get(conn, int(binding_id or 0)) if binding_id else None
-        if binding:
-            customer_bot = Bot(binding["bot_token"])
-            CUSTOMER_BOTS_BY_BINDING_ID[int(binding["id"])] = customer_bot
+        logger.warning(
+            "customer bot is not active: session_id=%s binding_id=%s",
+            session.get("session_id"),
+            binding_id,
+        )
+        return
     if not customer_bot or not session.get("customer_chat_id"):
         return
 
@@ -147,15 +170,22 @@ async def send_event_to_customer(conn, session: Dict[str, Any], event: Dict[str,
     if kind == "text":
         await customer_bot.send_message(chat_id=chat_id, text=event.get("text") or "")
     elif kind == "photo":
-        path = abs_public_path(event.get("local_path") or "")
-        await customer_bot.send_photo(chat_id=chat_id, photo=FSInputFile(path), caption=caption)
+        await _send_customer_media(customer_bot, chat_id, "photo", event.get("local_path") or "", caption)
     elif kind == "video":
-        path = abs_public_path(event.get("local_path") or "")
-        await customer_bot.send_video(chat_id=chat_id, video=FSInputFile(path), caption=caption)
+        await _send_customer_media(customer_bot, chat_id, "video", event.get("local_path") or "", caption)
     elif kind == "document":
-        path = abs_public_path(event.get("local_path") or "")
-        await customer_bot.send_document(chat_id=chat_id, document=FSInputFile(path), caption=caption)
+        await _send_customer_media(customer_bot, chat_id, "document", event.get("local_path") or "", caption)
     elif kind == "note":
         title = event.get("title") or "客服笔记"
         body = event.get("body") or ""
         await customer_bot.send_message(chat_id=chat_id, text="\n".join([x for x in [title, body] if x]))
+        for item in event.get("media") or []:
+            if not isinstance(item, dict):
+                continue
+            await _send_customer_media(
+                customer_bot,
+                chat_id,
+                item.get("type") or "document",
+                item.get("local_path") or "",
+                item.get("caption") or "",
+            )

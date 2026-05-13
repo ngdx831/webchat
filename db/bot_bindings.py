@@ -1,7 +1,18 @@
+import hashlib
 import sqlite3
 from typing import Any, Dict, List, Optional
 
-from .connection import _utc_now_iso
+from .connection import _utc_now_ts
+from shared.crypto import decrypt_token, encrypt_token
+
+
+def _token_hash(bot_token: str) -> str:
+    return hashlib.sha256((bot_token or "").strip().encode("utf-8")).hexdigest()
+
+
+def _decrypt_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    row["bot_token"] = decrypt_token(row.get("bot_token") or "")
+    return row
 
 
 def bot_binding_add(
@@ -12,22 +23,25 @@ def bot_binding_add(
     enabled: int = 1,
     owner_user_id: Optional[int] = None,
 ) -> int:
-    now = _utc_now_iso()
+    now = _utc_now_ts()
+    encrypted_token = encrypt_token(bot_token)
+    token_hash = _token_hash(bot_token)
     cur = conn.execute(
         """
-        INSERT INTO bot_bindings(key, owner_user_id, bot_token, bot_username, enabled, created_at, updated_at)
-        VALUES(?,?,?,?,?,?,?)
-        ON CONFLICT(bot_token) DO UPDATE SET
+        INSERT INTO bot_bindings(key, owner_user_id, bot_token, bot_token_hash, bot_username, enabled, created_ts, updated_ts)
+        VALUES(?,?,?,?,?,?,?,?)
+        ON CONFLICT(bot_token_hash) DO UPDATE SET
             key=excluded.key,
             owner_user_id=excluded.owner_user_id,
+            bot_token=excluded.bot_token,
             bot_username=excluded.bot_username,
             enabled=excluded.enabled,
-            updated_at=excluded.updated_at
+            updated_ts=excluded.updated_ts
         """,
-        (key, owner_user_id, bot_token, bot_username or "", 1 if int(enabled) else 0, now, now),
+        (key, owner_user_id, encrypted_token, token_hash, bot_username or "", 1 if int(enabled) else 0, now, now),
     )
     conn.commit()
-    row = conn.execute("SELECT id FROM bot_bindings WHERE bot_token=? LIMIT 1", (bot_token,)).fetchone()
+    row = conn.execute("SELECT id FROM bot_bindings WHERE bot_token_hash=? LIMIT 1", (token_hash,)).fetchone()
     return int(row["id"] if row else cur.lastrowid)
 
 
@@ -52,7 +66,7 @@ def bot_binding_list(conn: sqlite3.Connection, key: str = "", enabled_only: bool
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY key ASC, bot_username ASC, id ASC"
-    out = [dict(r) for r in conn.execute(sql, args).fetchall()]
+    out = [_decrypt_row(dict(r)) for r in conn.execute(sql, args).fetchall()]
     for row in out:
         if row.get("owner_user_id") is not None:
             row["owner_user_id"] = int(row["owner_user_id"])
@@ -74,7 +88,7 @@ def bot_binding_list_by_owner(
         where.append("enabled=1")
     sql = "SELECT * FROM bot_bindings WHERE " + " AND ".join(where)
     sql += " ORDER BY key ASC, bot_username ASC, id ASC"
-    out = [dict(r) for r in conn.execute(sql, args).fetchall()]
+    out = [_decrypt_row(dict(r)) for r in conn.execute(sql, args).fetchall()]
     for row in out:
         row["owner_user_id"] = int(row["owner_user_id"])
     return out
@@ -84,7 +98,7 @@ def bot_binding_get(conn: sqlite3.Connection, binding_id: int) -> Optional[Dict[
     row = conn.execute("SELECT * FROM bot_bindings WHERE id=? LIMIT 1", (int(binding_id),)).fetchone()
     if not row:
         return None
-    out = dict(row)
+    out = _decrypt_row(dict(row))
     if out.get("owner_user_id") is not None:
         out["owner_user_id"] = int(out["owner_user_id"])
     return out

@@ -1,7 +1,7 @@
 import json
 import os
 
-from flask import Blueprint, Response, redirect
+from flask import Blueprint, Response, redirect, request
 
 import db as dbm
 
@@ -20,6 +20,10 @@ def api_media(file_id: str):
     file_id = (file_id or "").strip()
     if not file_id:
         return json_error(400, "BAD_FILE_ID")
+    session_id = (request.args.get("session_id") or "").strip()
+    access_token = (request.args.get("token") or request.args.get("session_access_token") or "").strip()
+    if not session_id or not access_token:
+        return json_error(401, "BAD_SESSION_TOKEN")
 
     def expired_placeholder(kind: str = "photo"):
         label = "图片已过期"
@@ -35,13 +39,21 @@ def api_media(file_id: str):
 </svg>"""
         return Response(svg, mimetype="image/svg+xml", status=410)
 
+    conn = get_conn()
+    owner_session_id = dbm.media_owner_session_id(conn, file_id)
+    if not owner_session_id:
+        return json_error(404, "MEDIA_NOT_FOUND")
+    if not dbm.session_verify_access_token(conn, session_id, access_token):
+        return json_error(401, "BAD_SESSION_TOKEN")
+    if owner_session_id != session_id:
+        return json_error(403, "MEDIA_SESSION_MISMATCH")
+
     try:
-        conn = get_conn()
         asset = dbm.media_asset_get_by_file_id(conn, file_id)
         if asset:
             rel = str(asset.get("local_path") or "").lstrip("/")
             abs_path = os.path.join(PUBLIC_ROOT, rel)
-            if asset.get("deleted_at"):
+            if asset.get("deleted_ts"):
                 return expired_placeholder(asset.get("kind") or "photo")
             if rel and os.path.exists(abs_path):
                 return redirect("/" + rel)
@@ -52,7 +64,6 @@ def api_media(file_id: str):
 
     # 1) 先查 events.local_path（单媒体消息会写在这里）
     try:
-        conn = get_conn()
         row = conn.execute(
             "SELECT local_path FROM events WHERE file_id=? AND local_path<>'' ORDER BY id DESC LIMIT 1",
             (file_id,)
@@ -67,7 +78,6 @@ def api_media(file_id: str):
 
     # 2) 再查 events.media_json（note 的媒体在 media_json 里）
     try:
-        conn = get_conn()
         pat1 = f'%"file_id":"{file_id}"%'
         pat2 = f'%"file_id": "{file_id}"%'
         rows = conn.execute(

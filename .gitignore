@@ -1,7 +1,14 @@
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
+.uv-cache/
+.venv*/
+venv/
+tmp*/
+*.db
+*.sqlite
+*.sqlite*
 
 # Runtime state: SQLite db, generated tokens, downloaded media
 data/
-

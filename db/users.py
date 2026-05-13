@@ -1,7 +1,7 @@
 import sqlite3
 from typing import Any, Dict, List, Optional
 
-from .connection import _utc_now_iso
+from .connection import _utc_now_ts
 
 
 USER_ROLE_NORMAL = "normal"
@@ -38,7 +38,7 @@ def user_upsert_from_telegram(
 ) -> Dict[str, Any]:
     default_role = _validate_user_role(default_role)
     telegram_user_id = int(telegram_user_id)
-    now = _utc_now_iso()
+    now = _utc_now_ts()
     existing = user_get(conn, telegram_user_id)
     role = default_role
     if existing:
@@ -48,14 +48,14 @@ def user_upsert_from_telegram(
         """
         INSERT INTO users(
             telegram_user_id, username, display_name, role, enabled,
-            vip_until, created_at, updated_at
+            vip_until, created_ts, updated_ts
         )
         VALUES(?,?,?,?,?,?,?,?)
         ON CONFLICT(telegram_user_id) DO UPDATE SET
             username=excluded.username,
             display_name=excluded.display_name,
             role=excluded.role,
-            updated_at=excluded.updated_at
+            updated_ts=excluded.updated_ts
         """,
         (
             telegram_user_id,
@@ -64,7 +64,7 @@ def user_upsert_from_telegram(
             role,
             1,
             existing["vip_until"] if existing else "",
-            existing["created_at"] if existing else now,
+            existing["created_ts"] if existing else now,
             now,
         ),
     )
@@ -78,8 +78,8 @@ def user_upsert_from_telegram(
 def user_set_role(conn: sqlite3.Connection, telegram_user_id: int, role: str) -> Optional[Dict[str, Any]]:
     role = _validate_user_role(role)
     conn.execute(
-        "UPDATE users SET role=?, updated_at=? WHERE telegram_user_id=?",
-        (role, _utc_now_iso(), int(telegram_user_id)),
+        "UPDATE users SET role=?, updated_ts=? WHERE telegram_user_id=?",
+        (role, _utc_now_ts(), int(telegram_user_id)),
     )
     conn.commit()
     return user_get(conn, telegram_user_id)
@@ -87,8 +87,8 @@ def user_set_role(conn: sqlite3.Connection, telegram_user_id: int, role: str) ->
 
 def user_set_enabled(conn: sqlite3.Connection, telegram_user_id: int, enabled: bool) -> Optional[Dict[str, Any]]:
     conn.execute(
-        "UPDATE users SET enabled=?, updated_at=? WHERE telegram_user_id=?",
-        (1 if enabled else 0, _utc_now_iso(), int(telegram_user_id)),
+        "UPDATE users SET enabled=?, updated_ts=? WHERE telegram_user_id=?",
+        (1 if enabled else 0, _utc_now_ts(), int(telegram_user_id)),
     )
     conn.commit()
     return user_get(conn, telegram_user_id)

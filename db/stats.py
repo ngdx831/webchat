@@ -1,7 +1,7 @@
 import sqlite3
 from typing import Any, Dict, List, Optional
 
-from .connection import _utc_now_iso
+from .connection import _utc_now_ts
 
 
 def source_click_add(conn: sqlite3.Connection, key: str, source_code: str, channel: str, visitor_id: str) -> Optional[int]:
@@ -10,8 +10,8 @@ def source_click_add(conn: sqlite3.Connection, key: str, source_code: str, chann
     if not source_code or not visitor_id:
         return None
     cur = conn.execute(
-        "INSERT INTO source_clicks(key, source_code, channel, visitor_id, clicked_at) VALUES(?,?,?,?,?)",
-        (key, source_code, channel or "web", visitor_id, _utc_now_iso()),
+        "INSERT INTO source_clicks(key, source_code, channel, visitor_id, clicked_ts) VALUES(?,?,?,?,?)",
+        (key, source_code, channel or "web", visitor_id, _utc_now_ts()),
     )
     conn.commit()
     return int(cur.lastrowid)
@@ -22,7 +22,7 @@ def source_click_latest(conn: sqlite3.Connection, key: str, channel: str, visito
         """
         SELECT source_code FROM source_clicks
         WHERE key=? AND channel=? AND visitor_id=?
-        ORDER BY clicked_at DESC, id DESC
+        ORDER BY clicked_ts DESC, id DESC
         LIMIT 1
         """,
         (key, channel or "web", visitor_id),
@@ -37,10 +37,10 @@ def source_session_add(conn: sqlite3.Connection, key: str, source_code: str, cha
         return None
     conn.execute(
         """
-        INSERT OR IGNORE INTO source_sessions(key, source_code, channel, visitor_id, session_id, created_at)
+        INSERT OR IGNORE INTO source_sessions(key, source_code, channel, visitor_id, session_id, created_ts)
         VALUES(?,?,?,?,?,?)
         """,
-        (key, source_code, channel or "web", visitor_id, session_id, _utc_now_iso()),
+        (key, source_code, channel or "web", visitor_id, session_id, _utc_now_ts()),
     )
     conn.commit()
     row = conn.execute(
@@ -136,7 +136,7 @@ def stats_delete(conn: sqlite3.Connection, key: str, source_code: str = "") -> i
     conn.execute(
         f"""
         UPDATE sessions
-        SET source_code='', customer_status='none', marked_by='', marked_at=''
+        SET source_code='', customer_status='none', marked_by='', marked_ts=0
         WHERE {session_clause}
         """,
         params,

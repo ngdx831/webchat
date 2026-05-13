@@ -1,14 +1,14 @@
 import sqlite3
 from typing import Any, Dict, List, Optional
 
-from .connection import _utc_now_iso
+from .connection import _utc_now_ts
 
 
 def quick_reply_add(conn: sqlite3.Connection, key: str, title: str, answer: str, sort_order: int = 0, enabled: int = 1) -> int:
-    now = _utc_now_iso()
+    now = _utc_now_ts()
     cur = conn.execute(
         """
-        INSERT INTO quick_replies(key, title, answer, sort_order, enabled, created_at, updated_at)
+        INSERT INTO quick_replies(key, title, answer, sort_order, enabled, created_ts, updated_ts)
         VALUES(?,?,?,?,?,?,?)
         """,
         (key, title.strip(), answer.strip(), int(sort_order), 1 if int(enabled) else 0, now, now),

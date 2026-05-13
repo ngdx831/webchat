@@ -8,12 +8,14 @@ from shared.errors import TelegramAPIError, scrub_secrets
 
 
 logger = logging.getLogger(__name__)
+_session = requests.Session()
+_session.headers.update({"User-Agent": "webchat/1.0"})
 
 
 def _do_call(token: str, method: str, payload: Dict) -> Dict:
     url = f"https://api.telegram.org/bot{token}/{method}"
     try:
-        r = requests.post(url, json=payload, timeout=30)
+        r = _session.post(url, json=payload, timeout=(3, 10))
     except requests.RequestException as e:
         logger.warning("tg http error: method=%s err=%s", method, scrub_secrets(repr(e)))
         raise TelegramAPIError(0, "NETWORK_ERROR", method) from None
@@ -50,7 +52,7 @@ def tg_get_file_path_with_token(token: str, file_id: str) -> str:
 
 
 def download_file_to(path_url: str, dest_path: str) -> None:
-    with requests.get(path_url, stream=True, timeout=60) as r:
+    with _session.get(path_url, stream=True, timeout=(3, 30)) as r:
         r.raise_for_status()
         with open(dest_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=1024 * 256):

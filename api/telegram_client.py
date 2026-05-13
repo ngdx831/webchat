@@ -14,6 +14,8 @@ from .validators import html_escape
 
 
 logger = logging.getLogger(__name__)
+_session = requests.Session()
+_session.headers.update({"User-Agent": "webchat/1.0"})
 
 
 def tg_call(method: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -21,7 +23,7 @@ def tg_call(method: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         raise TelegramAPIError(0, "BOT_TOKEN_NOT_CONFIGURED", method)
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
     try:
-        r = requests.post(url, json=payload, timeout=20)
+        r = _session.post(url, json=payload, timeout=(3, 10))
     except requests.RequestException as e:
         # 注意:不要直接把 e 转字符串放到外层(可能含 URL+token)。
         logger.warning("tg_call network error: method=%s err=%s", method, scrub_secrets(repr(e)))
