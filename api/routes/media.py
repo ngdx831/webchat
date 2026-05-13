@@ -1,7 +1,8 @@
 import json
 import os
 
-from flask import Blueprint, Response, redirect, request
+import requests
+from flask import Blueprint, Response, redirect, request, stream_with_context
 
 import db as dbm
 
@@ -107,9 +108,23 @@ def api_media(file_id: str):
     except Exception:
         pass
 
-    # 3) 兜底：重定向 Telegram
+    # 3) 兜底：后端代理 Telegram 文件，避免 BOT_TOKEN 出现在浏览器 Location/Referer。
     try:
         file_url = tg_get_file_url(file_id)
-        return redirect(file_url)
+        upstream = requests.get(file_url, stream=True, timeout=(3, 15))
+        upstream.raise_for_status()
+
+        def generate():
+            try:
+                yield from upstream.iter_content(8192)
+            finally:
+                close = getattr(upstream, "close", None)
+                if close:
+                    close()
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype=upstream.headers.get("Content-Type") or "application/octet-stream",
+        )
     except Exception:
-        return json_error(500, "GET_FILE_FAILED")
+        return expired_placeholder("photo")
