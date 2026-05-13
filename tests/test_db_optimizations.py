@@ -2,11 +2,13 @@ import os
 import sqlite3
 import time
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("WEBCHAT_TOKEN_KEY", "45_3WKFv7XuSizf8ugfEGwANpINcSQz08wQiLKvyxfE=")
 
 import db as dbm
 from config import MEDIA_TTL_SECONDS, SESSION_IDLE_TTL_SECONDS, SESSION_TTL_SECONDS
+from shared.session_cleanup import delete_session_record_and_media
 
 
 class DatabaseOptimizationTests(unittest.TestCase):
@@ -91,6 +93,28 @@ class DatabaseOptimizationTests(unittest.TestCase):
         ).fetchall()
         details = " ".join(row["detail"] for row in plan)
         self.assertIn("idx_clicks_full", details)
+
+    def test_session_record_is_deleted_when_media_file_delete_fails(self):
+        dbm.widget_add(self.conn, "k1", 100, "Widget")
+        dbm.session_create_if_missing(self.conn, "s1", "k1", 100)
+        dbm.event_add(self.conn, "s1", "agent", kind="photo", file_id="file-1", local_path="media/a.jpg")
+
+        with patch("shared.session_cleanup.delete_media_files", side_effect=RuntimeError("disk failure")):
+            deleted_count = delete_session_record_and_media(self.conn, "s1", public_root="unused")
+
+        self.assertEqual(0, deleted_count)
+        self.assertIsNone(dbm.session_get(self.conn, "s1"))
+
+    def test_foreign_key_pragma_is_not_silently_ignored(self):
+        source = (os.path.dirname(dbm.__file__) + os.sep + "connection.py")
+        with open(source, "r", encoding="utf-8") as f:
+            body = f.read()
+
+        foreign_key_at = body.index('conn.execute("PRAGMA foreign_keys=ON")')
+        loop_at = body.index("for pragma in")
+        self.assertLess(foreign_key_at, loop_at)
+        pragma_loop = body[loop_at:body.index("return conn")]
+        self.assertNotIn("PRAGMA foreign_keys=ON", pragma_loop)
 
 
 if __name__ == "__main__":

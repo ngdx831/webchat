@@ -62,9 +62,12 @@ def cleanup_expired_media_files(conn, public_root: str, media_ttl_seconds: int) 
 
 def delete_session_record_and_media(conn, session_id: str, public_root: str) -> int:
     media_paths = dbm.session_get_media_paths(conn, session_id)
-    deleted_count = delete_media_files(public_root, media_paths)
     dbm.session_delete(conn, session_id)
-    return deleted_count
+    try:
+        return delete_media_files(public_root, media_paths)
+    except Exception as exc:
+        print(f"删除会话媒体文件失败: session={session_id}, error={exc}")
+        return 0
 
 
 def cleanup_expired_sessions(
