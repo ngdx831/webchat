@@ -68,6 +68,12 @@ class StaticProjectHygieneTests(unittest.TestCase):
             self.assertIn(command, user_commands)
             self.assertNotIn(command, admin_commands)
 
+    def test_media_route_does_not_scan_events_media_json(self):
+        source = (ROOT / "api" / "routes" / "media.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("media_json LIKE", source)
+        self.assertNotIn('%"file_id"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

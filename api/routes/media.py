@@ -1,4 +1,3 @@
-import json
 import os
 
 import requests
@@ -17,7 +16,7 @@ bp = Blueprint("media", __name__)
 
 @bp.get("/api/media/<file_id>")
 def api_media(file_id: str):
-    """媒体文件代理接口：优先走本地 local_path，其次才重定向 Telegram。"""
+    """媒体文件代理接口：优先走本地 local_path，其次代理 Telegram。"""
     file_id = (file_id or "").strip()
     if not file_id:
         return json_error(400, "BAD_FILE_ID")
@@ -77,38 +76,7 @@ def api_media(file_id: str):
     except Exception:
         pass
 
-    # 2) 再查 events.media_json（note 的媒体在 media_json 里）
-    try:
-        pat1 = f'%"file_id":"{file_id}"%'
-        pat2 = f'%"file_id": "{file_id}"%'
-        rows = conn.execute(
-            "SELECT media_json FROM events WHERE media_json LIKE ? OR media_json LIKE ? ORDER BY id DESC LIMIT 10",
-            (pat1, pat2)
-        ).fetchall()
-
-        for r in rows:
-            mj = r[0] or ""
-            try:
-                arr = json.loads(mj) if mj else []
-            except Exception:
-                arr = []
-            if not isinstance(arr, list):
-                continue
-            for m in arr:
-                if not isinstance(m, dict):
-                    continue
-                if (m.get("file_id") or "") != file_id:
-                    continue
-                rel = str(m.get("local_path") or "").lstrip("/")
-                if not rel:
-                    continue
-                abs_path = os.path.join(PUBLIC_ROOT, rel)
-                if os.path.exists(abs_path):
-                    return redirect("/" + rel)
-    except Exception:
-        pass
-
-    # 3) 兜底：后端代理 Telegram 文件，避免 BOT_TOKEN 出现在浏览器 Location/Referer。
+    # 2) 兜底：后端代理 Telegram 文件，避免 BOT_TOKEN 出现在浏览器 Location/Referer。
     try:
         file_url = tg_get_file_url(file_id)
         upstream = requests.get(file_url, stream=True, timeout=(3, 15))
