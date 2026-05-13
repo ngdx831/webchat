@@ -101,6 +101,7 @@ WebChat 是一个基于 Flask 和 Telegram Bot 的客服系统。网页访客或
 │   ├── telegram_api.py      # Telegram HTTP 调用、文件下载
 │   ├── media.py             # 媒体落盘到 WEBCHAT_MEDIA_ROOT
 │   ├── relay.py             # 话题创建、客服↔客户消息中继、notify_web
+│   ├── rate_limit.py        # 主 Bot 全局发包限速(token bucket)
 │   ├── auth.py              # 用户、角色、入口归属校验
 │   ├── validators.py        # KEY/SOURCE 校验
 │   ├── pending.py           # 私聊待处理动作分发（Token 提交等）

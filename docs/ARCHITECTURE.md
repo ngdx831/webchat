@@ -89,6 +89,7 @@ bot/
 ├── telegram_api.py     # Telegram HTTP 调用、文件下载
 ├── media.py            # 把 Telegram 文件落到 WEBCHAT_MEDIA_ROOT
 ├── relay.py            # 话题创建、客服↔客户消息中继、notify_web
+├── rate_limit.py       # 主 Bot 全局发包速率限制(token bucket + flood 重试)
 ├── auth.py             # 用户/角色/入口归属/启用状态校验
 ├── validators.py       # KEY/SOURCE 校验
 ├── pending.py          # 私聊待处理动作分发（Token 提交等）
@@ -108,13 +109,13 @@ bot/
 `bot/app.py` 启动时：
 
 1. 初始化数据库 `db.init_db()`。
-2. 注册主 Bot 的 Dispatcher（调用 `handlers/__init__.py` 的 `register_all(dp)`）。
+2. `import bot.handlers` —— 每个 handler 模块用 `@dp.message`/`@dp.callback_query` 在 import 时把自己注册到 Dispatcher;注册顺序按 `handlers/__init__.py` 里的 import 顺序,`messages` 必须最后(包含 catch-all)。
 3. 从 `db.bot_bindings` 加载所有客户侧 Bot 绑定，逐个起一个 polling 任务（`customer_bots.activate_customer_bot_binding`）。
 4. 启动主 Bot polling。
 
 `handlers/` 内的每个文件只负责一组命令，依赖通过 import 引入：纯校验逻辑找 `auth.py` / `validators.py`，DB 操作找 `db/`，发送消息找 `relay.py`，落媒体找 `media.py`。
 
-**加新命令**：在 `bot/handlers/` 下新建或扩展一个文件，注册到 Dispatcher（在 `handlers/__init__.py` 添加 `register_xxx(dp)` 调用），再在 `/help` 或 `/adminhelp` 文案里补一行。
+**加新命令**：在 `bot/handlers/` 下新建或扩展一个文件,用 `@dp.message(Command(...))` 等装饰器自注册,然后把模块加入 `handlers/__init__.py` 的 import 列表(catch-all 的 `messages` 必须保持在最后),再在 `/help` 或 `/adminhelp` 文案里补一行。
 
 ## `shared/` —— 跨层公用
 
