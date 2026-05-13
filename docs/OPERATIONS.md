@@ -6,6 +6,8 @@
 - `tg_bot.py`：Telegram Bot，负责管理命令和客服回复。
 - `python -m api.cleanup_worker`：定时执行过期会话和媒体清理，避免普通 HTTP 请求被清理任务拖慢。
 
+> ⚠️ **必须配置清理 timer**：API 请求链路已经不再触发清理，如果 `webchat-cleanup.timer` 未启用，过期会话和媒体文件会**永久堆积**，最终撑爆磁盘。详见下文「定时清理任务」一节。
+
 ## 部署前准备
 
 准备以下资源：
@@ -201,7 +203,9 @@ systemctl enable --now webchat-bot
 
 ### 定时清理任务
 
-清理任务已经从 API 请求链路中拆出。建议用 systemd timer 或 cron 单独运行：
+清理任务已经从 API 请求链路中拆出，**必须**用 systemd timer 或 cron 单独运行，否则过期数据永远不会被清掉：
+
+示例 service `/etc/systemd/system/webchat-cleanup.service`：
 
 ```ini
 [Unit]

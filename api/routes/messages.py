@@ -177,6 +177,8 @@ def api_history(key: str):
 
     events = [
         enrich_media_payload(conn, event_row_to_payload(ev), access_token=access_token)
-        for ev in dbm.events_list(conn, session_id, limit=200)
+        for ev in dbm.events_list(conn, session_id, limit=dbm.HISTORY_LIMIT)
     ]
-    return jsonify({"ok": True, "events": events})
+    total = dbm.events_count(conn, session_id)
+    truncated = total > len(events)
+    return jsonify({"ok": True, "events": events, "truncated": truncated})
