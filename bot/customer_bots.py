@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import CommandStart
 
 from config import BOT_TOKEN
+from .db_lifecycle import register_db_cleanup_middleware
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ def _register_customer_bot_binding(binding: Dict[str, Any], customer_bot: Bot) -
 
 def _create_customer_dispatcher() -> Dispatcher:
     customer_dp = Dispatcher()
+    register_db_cleanup_middleware(customer_dp)
 
     from .handlers.basic import cmd_start
     from .handlers.messages import handle_forum_topic_reply

@@ -290,7 +290,7 @@ source.addEventListener("ping", () => {
     {
       "type": "photo",
       "file_id": "AgACAgUAAxkBA...",
-      "local_path": "webchat/media/202601/file.jpg",
+      "local_path": "media/202601/file.jpg",
       "media_url": "/api/media/AgACAgUAAxkBA...",
       "media_expired": false
     }

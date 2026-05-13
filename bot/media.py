@@ -3,7 +3,8 @@ import os
 from contextlib import suppress
 from datetime import datetime
 
-from config import BOT_TOKEN, WEBCHAT_MEDIA_ROOT
+from config import BASE_DIR, BOT_TOKEN, WEBCHAT_MEDIA_ROOT
+from shared.media_paths import media_relative_path, resolve_media_path
 
 from .telegram_api import (
     download_file_to,
@@ -12,14 +13,7 @@ from .telegram_api import (
 )
 
 
-def _public_root_from_media_root() -> str:
-    try:
-        return os.path.abspath(os.path.join(WEBCHAT_MEDIA_ROOT, os.pardir, os.pardir))
-    except Exception:
-        return "/www/wwwroot/kefu.ws"
-
-
-PUBLIC_ROOT = _public_root_from_media_root()
+PUBLIC_ROOT = BASE_DIR
 
 
 def _try_chown_www(path: str) -> None:
@@ -46,7 +40,7 @@ def ensure_dir(path: str) -> None:
 async def save_webchat_media(file_id: str, file_unique_id: str) -> str:
     """
     下载客服媒体文件到 WEBCHAT_MEDIA_ROOT/YYYYMM/xxx.ext
-    返回 rel_path：webchat/media/YYYYMM/xxx.ext
+    返回 rel_path：media/YYYYMM/xxx.ext
     """
     file_path = await asyncio.to_thread(tg_get_file_path, file_id)
     _, ext = os.path.splitext(file_path)
@@ -68,8 +62,7 @@ async def save_webchat_media(file_id: str, file_unique_id: str) -> str:
             pass
         _try_chown_www(abs_path)
 
-    rel_path = f"webchat/media/{ym}/{fname}"
-    return rel_path
+    return media_relative_path(ym, fname)
 
 
 async def save_media_from_token(token: str, file_id: str, file_unique_id: str) -> str:
@@ -87,8 +80,8 @@ async def save_media_from_token(token: str, file_id: str, file_unique_id: str) -
         with suppress(Exception):
             os.chmod(abs_path, 0o664)
         _try_chown_www(abs_path)
-    return f"webchat/media/{ym}/{fname}"
+    return media_relative_path(ym, fname)
 
 
 def abs_public_path(rel_path: str) -> str:
-    return os.path.join(PUBLIC_ROOT, (rel_path or "").lstrip("/\\"))
+    return resolve_media_path(rel_path, media_root=WEBCHAT_MEDIA_ROOT, project_root=PUBLIC_ROOT)

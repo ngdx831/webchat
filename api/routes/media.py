@@ -1,7 +1,7 @@
 import os
 
 import requests
-from flask import Blueprint, Response, redirect, request, stream_with_context
+from flask import Blueprint, Response, request, send_file, stream_with_context
 
 import db as dbm
 
@@ -9,6 +9,7 @@ from ..db_helpers import get_conn
 from ..paths import PUBLIC_ROOT
 from ..telegram_client import tg_get_file_url
 from ..validators import html_escape, json_error
+from shared.media_paths import resolve_media_path
 
 
 bp = Blueprint("media", __name__)
@@ -52,11 +53,11 @@ def api_media(file_id: str):
         asset = dbm.media_asset_get_by_file_id(conn, file_id)
         if asset:
             rel = str(asset.get("local_path") or "").lstrip("/")
-            abs_path = os.path.join(PUBLIC_ROOT, rel)
+            abs_path = resolve_media_path(rel, project_root=PUBLIC_ROOT)
             if asset.get("deleted_ts"):
                 return expired_placeholder(asset.get("kind") or "photo")
             if rel and os.path.exists(abs_path):
-                return redirect("/" + rel)
+                return send_file(abs_path, conditional=True)
             dbm.media_asset_mark_deleted(conn, file_id)
             return expired_placeholder(asset.get("kind") or "photo")
     except Exception:
@@ -70,9 +71,9 @@ def api_media(file_id: str):
         ).fetchone()
         if row and row[0]:
             rel = str(row[0]).lstrip("/")
-            abs_path = os.path.join(PUBLIC_ROOT, rel)
+            abs_path = resolve_media_path(rel, project_root=PUBLIC_ROOT)
             if os.path.exists(abs_path):
-                return redirect("/" + rel)
+                return send_file(abs_path, conditional=True)
     except Exception:
         pass
 

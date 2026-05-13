@@ -108,9 +108,8 @@ MAX_RICH_TEXT_LENGTH = 4000
 
 # ===================== 6) 客服系统媒体文件落盘目录 =====================
 
-# 默认落在项目内 data/media；生产可通过 WEBCHAT_MEDIA_ROOT 指向 Nginx 托管目录，
-# 例如：export WEBCHAT_MEDIA_ROOT=/www/wwwroot/kefu.ws/webchat/media
-WEBCHAT_MEDIA_ROOT = os.getenv("WEBCHAT_MEDIA_ROOT", "").strip() or os.path.join(DATA_DIR, "media")
+# 默认落在项目根目录 media/；项目目录变化时会跟随 BASE_DIR。
+WEBCHAT_MEDIA_ROOT = os.path.abspath(os.getenv("WEBCHAT_MEDIA_ROOT", "").strip() or os.path.join(BASE_DIR, "media"))
 
 
 def _resolved_internal_token() -> str:

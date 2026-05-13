@@ -158,7 +158,7 @@ Telegram ─► bot/handlers/messages.py: 论坛话题回复
 ## 部署拓扑提示
 
 - 当前默认部署：API 进程、Bot 进程、SQLite、媒体目录都在后端同一台机器，前置 Nginx。
-- 前后端跨机房（如后端 SG、前端 HK）时，本次重构保持媒体落在后端 `data/media/`，访客通过 `GET /api/media/<file_id>` 经后端取媒体；把媒体迁到前端机器（NFS/SSHFS 挂载、HTTPS 上传、对象存储）是后续独立优化项，会改 `bot/media.py` 和 `api/routes/media.py`。
+- 前后端跨机房（如后端 SG、前端 HK）时，本次重构保持媒体落在后端项目根目录 `media/`，访客通过 `GET /api/media/<file_id>` 经后端取媒体；把媒体迁到前端机器（NFS/SSHFS 挂载、HTTPS 上传、对象存储）是后续独立优化项，会改 `bot/media.py` 和 `api/routes/media.py`。
 - `WEBCHAT_MEDIA_ROOT` 用环境变量覆盖即可，应用代码不区分本地路径还是挂载路径。
 
 ## 测试与冒烟

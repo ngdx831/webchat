@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional
 
 import db as dbm
+from shared.media_paths import media_path_candidates
 
 
 @dataclass
@@ -14,18 +15,11 @@ class SessionCleanupResult:
 
 
 def resolve_public_media_path(public_root: str, rel_path: str) -> Optional[str]:
-    rel = (rel_path or "").strip().lstrip("/\\")
-    if not rel:
-        return None
-
-    root = os.path.abspath(public_root)
-    candidate = os.path.abspath(os.path.join(root, rel))
-    try:
-        if os.path.commonpath([root, candidate]) != root:
-            return None
-    except Exception:
-        return None
-    return candidate
+    candidates = media_path_candidates(rel_path, project_root=public_root)
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return candidates[0] if candidates else None
 
 
 def delete_media_files(public_root: str, media_paths: List[str]) -> int:

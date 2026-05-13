@@ -12,3 +12,4 @@ tmp*/
 
 # Runtime state: SQLite db, generated tokens, downloaded media
 data/
+media/

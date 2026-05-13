@@ -1,3 +1,4 @@
+import contextlib
 from typing import Any, Dict
 
 from aiogram import Bot
@@ -66,16 +67,18 @@ async def customer_cmd_start(msg: Message, command: CommandObject, active_bot: B
     key = binding["key"]
     source_code = validate_source_code(command.args or "")
     visitor_id = str(msg.from_user.id if msg.from_user else msg.chat.id)
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
-    widget = dbm.widget_get(conn, key)
-    if not widget_owner_enabled(conn, widget):
-        await active_bot.send_message(chat_id=msg.chat.id, text="客服入口暂不可用。")
-        return
-    if source_code:
-        dbm.source_click_add(conn, key, source_code, "telegram", visitor_id)
+    with contextlib.closing(dbm.get_conn(DB_PATH)) as conn:
+        dbm.init_db(conn)
+        widget = dbm.widget_get(conn, key)
+        if not widget_owner_enabled(conn, widget):
+            await active_bot.send_message(chat_id=msg.chat.id, text="客服入口暂不可用。")
+            return
+        if source_code:
+            dbm.source_click_add(conn, key, source_code, "telegram", visitor_id)
 
-    replies = dbm.quick_reply_list(conn, key) if widget_owner_has_vip_features(conn, widget) else []
+        replies = dbm.quick_reply_list(conn, key) if widget_owner_has_vip_features(conn, widget) else []
+        help_link = dbm.setting_get(conn, "help_link", "")
+        welcome_text = (widget or {}).get("welcome_text") or "请选择常见问题，或直接发送消息联系人工客服。"
     keyboard = None
     if replies:
         keyboard = InlineKeyboardMarkup(
@@ -84,8 +87,6 @@ async def customer_cmd_start(msg: Message, command: CommandObject, active_bot: B
                 for item in replies[:9]
             ]
         )
-    help_link = dbm.setting_get(conn, "help_link", "")
-    welcome_text = (widget or {}).get("welcome_text") or "请选择常见问题，或直接发送消息联系人工客服。"
     text_lines = [welcome_text]
     if help_link:
         text_lines.extend(["", f"Help: {help_link}"])

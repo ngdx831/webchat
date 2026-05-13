@@ -1,3 +1,5 @@
+import contextlib
+
 from aiogram import Bot
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
@@ -23,15 +25,13 @@ async def cmd_qradd(msg: Message, bot: Bot):
     from config import MAX_RICH_TEXT_LENGTH
     title = title[:120]
     answer = answer[: int(MAX_RICH_TEXT_LENGTH)]
-    _, _, _, permission_error = vip_key_context(msg, key)
+    conn, _, _, permission_error = vip_key_context(msg, key)
     if permission_error:
         await msg.reply(permission_error)
         return
     if not title or not answer:
         await msg.reply("❌ 标题和答案不能为空")
         return
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
     if not dbm.widget_get(conn, key):
         await msg.reply(f"❌ 未找到 key：{key}")
         return
@@ -52,12 +52,10 @@ async def cmd_qrls(msg: Message, bot: Bot):
         await msg.reply("用法：/qrls <key>")
         return
     key = parts[1].strip()
-    _, _, _, permission_error = vip_key_context(msg, key)
+    conn, _, _, permission_error = vip_key_context(msg, key)
     if permission_error:
         await msg.reply(permission_error)
         return
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
     rows = dbm.quick_reply_list(conn, key, enabled_only=False)
     if not rows:
         await msg.reply("（暂无快速回复）")
@@ -83,12 +81,10 @@ async def cmd_qrdel(msg: Message, bot: Bot):
     except Exception:
         await msg.reply("❌ 编号必须是数字")
         return
-    _, _, _, permission_error = vip_key_context(msg, key)
+    conn, _, _, permission_error = vip_key_context(msg, key)
     if permission_error:
         await msg.reply(permission_error)
         return
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
     count = dbm.quick_reply_delete(conn, key, reply_id)
     await msg.reply("✅ 已删除" if count else "⚠️ 没有找到对应快速回复")
 
@@ -106,9 +102,9 @@ async def handle_quick_reply_callback(call: CallbackQuery, bot: Bot):
     except Exception:
         await call.answer("无效按钮", show_alert=False)
         return
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
-    reply = dbm.quick_reply_get(conn, reply_id)
+    with contextlib.closing(dbm.get_conn(DB_PATH)) as conn:
+        dbm.init_db(conn)
+        reply = dbm.quick_reply_get(conn, reply_id)
     if not reply or reply.get("key") != binding["key"]:
         await call.answer("内容不存在", show_alert=False)
         return

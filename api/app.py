@@ -6,6 +6,7 @@ from werkzeug.exceptions import HTTPException
 from config import API_HOST, API_PORT, BOT_TOKEN, MAX_REQUEST_BYTES
 from shared.errors import scrub_secrets
 
+from .db_helpers import close_db_conn
 from .routes import ALL_BLUEPRINTS
 from .validators import json_error
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = int(MAX_REQUEST_BYTES)
+    app.teardown_appcontext(close_db_conn)
 
     for bp in ALL_BLUEPRINTS:
         app.register_blueprint(bp)

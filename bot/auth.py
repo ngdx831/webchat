@@ -4,6 +4,7 @@ from aiogram.types import Message
 
 import db as dbm
 from config import ADMIN_IDS, DB_PATH
+from .db_lifecycle import track_connection
 
 
 def is_admin(user_id: int) -> bool:
@@ -78,7 +79,7 @@ def widget_owner_enabled(conn, widget: Optional[Dict[str, Any]]) -> bool:
 
 
 def open_user_context(msg: Message):
-    conn = dbm.get_conn(DB_PATH)
+    conn = track_connection(dbm.get_conn(DB_PATH))
     dbm.init_db(conn)
     user = current_user_from_message(conn, msg)
     return conn, user

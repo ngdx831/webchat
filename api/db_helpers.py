@@ -2,17 +2,38 @@ import os
 from typing import Any, Dict, Optional
 from urllib.parse import quote, urlencode
 
+from flask import g, has_app_context
+
 import db as dbm
 from config import DB_PATH
+from shared.media_paths import resolve_media_path
 
 from .paths import PUBLIC_ROOT
 from .validators import json_error
 
 
-def get_conn():
+def _open_conn():
     conn = dbm.get_conn(DB_PATH)
     dbm.init_db(conn)
     return conn
+
+
+def get_conn():
+    if not has_app_context():
+        return _open_conn()
+    conn = g.get("_webchat_db_conn")
+    if conn is None:
+        conn = _open_conn()
+        g._webchat_db_conn = conn
+    return conn
+
+
+def close_db_conn(_error=None):
+    if not has_app_context():
+        return
+    conn = g.pop("_webchat_db_conn", None)
+    if conn is not None:
+        conn.close()
 
 
 def web_widget_or_error(conn, key: str):
@@ -56,10 +77,10 @@ def media_proxy_url(file_id: str, session_id: str, access_token: str) -> str:
 
 
 def _media_missing(local_path: str) -> bool:
-    rel = (local_path or "").strip().lstrip("/\\")
-    if not rel:
+    if not (local_path or "").strip():
         return False
-    return not os.path.exists(os.path.join(PUBLIC_ROOT, rel))
+    abs_path = resolve_media_path(local_path, project_root=PUBLIC_ROOT)
+    return not bool(abs_path and os.path.exists(abs_path))
 
 
 def enrich_media_payload(conn, payload: Dict[str, Any], access_token: str = "") -> Dict[str, Any]:

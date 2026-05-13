@@ -20,12 +20,10 @@ async def cmd_stats(msg: Message, bot: Bot):
         return
     key = parts[1].strip()
     source_code = parts[2].strip() if len(parts) >= 3 else ""
-    _, _, _, permission_error = vip_key_context(msg, key)
+    conn, _, _, permission_error = vip_key_context(msg, key)
     if permission_error:
         await msg.reply(permission_error)
         return
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
     rows = dbm.stats_for_key(conn, key, source_code)
     if not rows:
         await msg.reply("（暂无统计）")
@@ -49,12 +47,10 @@ async def cmd_statdel(msg: Message, bot: Bot):
         return
     key = parts[1].strip()
     source_code = parts[2].strip() if len(parts) >= 3 else ""
-    _, _, _, permission_error = vip_key_context(msg, key)
+    conn, _, _, permission_error = vip_key_context(msg, key)
     if permission_error:
         await msg.reply(permission_error)
         return
-    conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
     count = dbm.stats_delete(conn, key, source_code)
     target = f"{key}/{source_code}" if source_code else key
     await msg.reply(f"✅ 已清理统计：{target}\n影响记录：{count}\n聊天记录和会话未删除。")
