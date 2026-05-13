@@ -124,17 +124,15 @@ def _resolved_internal_token() -> str:
                 return existing
     except FileNotFoundError:
         pass
-    except OSError:
-        return secrets.token_urlsafe(32)
+    # 必须把 token 持久化到磁盘:API 进程和 Bot 进程通过 import 都要拿到同一个值。
+    # 读/写失败时不能静默退化为随机值——那样会让两个进程各自生成不同 token,导致
+    # /internal/notify 长期 401 且很难定位,因此直接抛错让运维一眼看到根因。
     token = secrets.token_urlsafe(32)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(token_path, "w", encoding="utf-8") as f:
+        f.write(token)
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
-        with open(token_path, "w", encoding="utf-8") as f:
-            f.write(token)
-        try:
-            os.chmod(token_path, 0o600)
-        except OSError:
-            pass
+        os.chmod(token_path, 0o600)
     except OSError:
         pass
     return token

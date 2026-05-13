@@ -66,7 +66,10 @@ def events_since(conn: sqlite3.Connection, session_id: str, since_id: int, limit
     return [dict(r) for r in rows]
 
 
-def events_list(conn: sqlite3.Connection, session_id: str, limit: int = 200) -> List[Dict[str, Any]]:
+HISTORY_LIMIT = 100
+
+
+def events_list(conn: sqlite3.Connection, session_id: str, limit: int = HISTORY_LIMIT) -> List[Dict[str, Any]]:
     rows = conn.execute(
         "SELECT * FROM events WHERE session_id=? ORDER BY id DESC LIMIT ?",
         (session_id, int(limit)),
@@ -74,3 +77,11 @@ def events_list(conn: sqlite3.Connection, session_id: str, limit: int = 200) -> 
     out = [dict(r) for r in rows]
     out.reverse()
     return out
+
+
+def events_count(conn: sqlite3.Connection, session_id: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM events WHERE session_id=?",
+        (session_id,),
+    ).fetchone()
+    return int(row["n"]) if row else 0

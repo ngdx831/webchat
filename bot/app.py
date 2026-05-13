@@ -21,14 +21,17 @@ async def main() -> None:
             token = binding.get("bot_token") or ""
             if not token or token == BOT_TOKEN:
                 continue
+            customer_bot = Bot(token)
             try:
-                customer_bot = Bot(token)
                 me = await customer_bot.get_me()
-                binding["bot_username"] = binding.get("bot_username") or (me.username or "")
-                await activate_customer_bot_binding(binding, customer_bot, start_polling=True)
-                print(f"Loaded customer bot @{binding.get('bot_username') or me.username or binding['id']} for key={binding['key']}")
             except Exception as exc:
+                with contextlib.suppress(Exception):
+                    await customer_bot.session.close()
                 print(f"Load customer bot failed: key={binding.get('key')}, id={binding.get('id')}, error={exc}")
+                continue
+            binding["bot_username"] = binding.get("bot_username") or (me.username or "")
+            await activate_customer_bot_binding(binding, customer_bot, start_polling=True)
+            print(f"Loaded customer bot @{binding.get('bot_username') or me.username or binding['id']} for key={binding['key']}")
     try:
         await dp.start_polling(main_bot)
     finally:

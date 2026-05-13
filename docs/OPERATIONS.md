@@ -6,6 +6,8 @@
 - `tg_bot.py`：Telegram Bot，负责管理命令和客服回复。
 - `python -m api.cleanup_worker`：定时执行过期会话和媒体清理，避免普通 HTTP 请求被清理任务拖慢。
 
+> ⚠️ **必须配置清理 timer**：API 请求链路已经不再触发清理，如果 `webchat-cleanup.timer` 未启用，过期会话和媒体文件会**永久堆积**，最终撑爆磁盘。详见下文「定时清理任务」一节。
+
 ## 部署前准备
 
 准备以下资源：
@@ -158,13 +160,15 @@ WorkingDirectory=/www/wwwroot/webchat
 Environment=WEBCHAT_BOT_TOKEN=替换为你的主BotToken
 Environment=WEBCHAT_TOKEN_KEY=替换为Fernet生成的固定密钥
 Environment=WEBCHAT_INTERNAL_TOKEN=替换为API和Bot共用的随机长字符串
-ExecStart=/www/wwwroot/webchat/venv/bin/gunicorn -k gthread -w 2 --threads 16 -b 127.0.0.1:5055 "api.app:create_app()"
+ExecStart=/www/wwwroot/webchat/venv/bin/gunicorn -k gthread -w 1 --threads 32 -b 127.0.0.1:5055 "api.app:create_app()"
 Restart=always
 RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+> ⚠️ **必须使用 `-w 1`**：SSE 订阅者字典是 worker 进程内的内存结构,`tg_bot.py` 通过 `/internal/notify` 推送事件时,反向代理会把请求路由到任意一个 worker,只有恰好持有订阅者队列的 worker 能把事件推给客户端。开多个 worker 会让客户端按 1/N 的概率漏收消息。需要更高并发时,把 `--threads` 调到 64/128,或改用 `gevent`/`eventlet` worker(单进程几千并发连接)。
 
 ### Bot 服务
 
@@ -201,7 +205,9 @@ systemctl enable --now webchat-bot
 
 ### 定时清理任务
 
-清理任务已经从 API 请求链路中拆出。建议用 systemd timer 或 cron 单独运行：
+清理任务已经从 API 请求链路中拆出，**必须**用 systemd timer 或 cron 单独运行，否则过期数据永远不会被清掉：
+
+示例 service `/etc/systemd/system/webchat-cleanup.service`：
 
 ```ini
 [Unit]
@@ -494,7 +500,6 @@ journalctl -u webchat-bot -n 100
 每次调整多用户权限或上线前，至少执行：
 
 ```bash
-python -m unittest discover -s tests
 python -m compileall api_server.py tg_bot.py config.py api bot db shared
 ```
 

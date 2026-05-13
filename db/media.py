@@ -1,4 +1,3 @@
-import json
 import sqlite3
 import time
 from typing import Any, Dict, List, Optional
@@ -59,28 +58,6 @@ def media_owner_session_id(conn: sqlite3.Connection, file_id: str) -> Optional[s
     ).fetchone()
     if row and row["session_id"]:
         return str(row["session_id"])
-
-    pat1 = f'%"file_id":"{file_id}"%'
-    pat2 = f'%"file_id": "{file_id}"%'
-    rows = conn.execute(
-        """
-        SELECT session_id, media_json FROM events
-        WHERE media_json LIKE ? OR media_json LIKE ?
-        ORDER BY id DESC
-        LIMIT 20
-        """,
-        (pat1, pat2),
-    ).fetchall()
-    for row in rows:
-        try:
-            media = json.loads(row["media_json"] or "[]")
-        except Exception:
-            continue
-        if not isinstance(media, list):
-            continue
-        for item in media:
-            if isinstance(item, dict) and (item.get("file_id") or "") == file_id:
-                return str(row["session_id"])
     return None
 
 

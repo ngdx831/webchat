@@ -340,6 +340,9 @@ const pathKey = decodeURIComponent(location.pathname.replace(/^\/+/, "").split("
       const data = await resp.json();
       if (!data.ok) return;
       messages.innerHTML = "";
+      if (data.truncated) {
+        appendMessage({ role: "system", kind: "text", text: "— 仅显示最近的消息,更早的记录已不可见 —" });
+      }
       (data.events || []).forEach(appendMessage);
     }
 

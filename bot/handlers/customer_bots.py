@@ -1,3 +1,5 @@
+from contextlib import suppress
+
 from aiogram import Bot
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -45,12 +47,14 @@ async def cmd_botadd(msg: Message, bot: Bot):
         await msg.reply("Permission denied or key not found.")
         return
 
+    probe = Bot(token)
     try:
-        probe = Bot(token)
         me = await probe.get_me()
         username = username or (me.username or "")
     except Exception:
         # 不回显原始异常,token 可能在异常文本里。
+        with suppress(Exception):
+            await probe.session.close()
         await msg.reply("❌ 机器人 Token 验证失败,请检查 token 格式或网络。")
         return
 

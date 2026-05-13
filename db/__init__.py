@@ -47,7 +47,7 @@ from .sessions import (
     session_get_or_create_stream_token,
     session_verify_stream_token,
 )
-from .events import ensure_system_event, event_add, events_since, events_list
+from .events import HISTORY_LIMIT, ensure_system_event, event_add, events_count, events_since, events_list
 from .bot_bindings import (
     bot_binding_add,
     bot_binding_delete,
