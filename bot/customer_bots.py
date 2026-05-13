@@ -15,6 +15,16 @@ CUSTOMER_BOTS_BY_TOKEN: Dict[str, Dict[str, Any]] = {}
 CUSTOMER_BOTS_BY_BINDING_ID: Dict[int, Bot] = {}
 CUSTOMER_BOT_POLLING_TASKS: Dict[int, "asyncio.Task[Any]"] = {}
 CUSTOMER_BOT_DISPATCHERS: Dict[int, Dispatcher] = {}
+_binding_locks: Dict[int, asyncio.Lock] = {}
+
+
+def _lock_for(binding_id: int) -> asyncio.Lock:
+    binding_id = int(binding_id)
+    lock = _binding_locks.get(binding_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _binding_locks[binding_id] = lock
+    return lock
 
 
 def _bot_token(active_bot: Optional[Bot]) -> str:
@@ -76,33 +86,33 @@ async def activate_customer_bot_binding(
 ) -> bool:
     """Register a customer-side bot and optionally start polling it immediately."""
     binding_id = int(binding["id"])
-    existing_bot = CUSTOMER_BOTS_BY_BINDING_ID.get(binding_id)
-    if existing_bot is not None and existing_bot is not customer_bot:
-        await deactivate_customer_bot_binding(binding_id)
+    async with _lock_for(binding_id):
+        existing_bot = CUSTOMER_BOTS_BY_BINDING_ID.get(binding_id)
+        if existing_bot is not None and existing_bot is not customer_bot:
+            await _deactivate_customer_bot_binding_unlocked(binding_id)
 
-    _register_customer_bot_binding(binding, customer_bot)
+        _register_customer_bot_binding(binding, customer_bot)
 
-    if not start_polling:
-        return False
+        if not start_polling:
+            return False
 
-    task = CUSTOMER_BOT_POLLING_TASKS.get(binding_id)
-    if task and not task.done():
-        return False
+        task = CUSTOMER_BOT_POLLING_TASKS.get(binding_id)
+        if task and not task.done():
+            return False
 
-    customer_dp = CUSTOMER_BOT_DISPATCHERS.get(binding_id)
-    if customer_dp is None:
-        customer_dp = _create_customer_dispatcher()
-        CUSTOMER_BOT_DISPATCHERS[binding_id] = customer_dp
+        customer_dp = CUSTOMER_BOT_DISPATCHERS.get(binding_id)
+        if customer_dp is None:
+            customer_dp = _create_customer_dispatcher()
+            CUSTOMER_BOT_DISPATCHERS[binding_id] = customer_dp
 
-    CUSTOMER_BOT_POLLING_TASKS[binding_id] = asyncio.create_task(
-        _run_customer_bot_polling(binding_id, customer_bot, customer_dp),
-        name=f"customer-bot-polling-{binding_id}",
-    )
-    return True
+        CUSTOMER_BOT_POLLING_TASKS[binding_id] = asyncio.create_task(
+            _run_customer_bot_polling(binding_id, customer_bot, customer_dp),
+            name=f"customer-bot-polling-{binding_id}",
+        )
+        return True
 
 
-async def deactivate_customer_bot_binding(binding_id: int) -> None:
-    binding_id = int(binding_id)
+async def _deactivate_customer_bot_binding_unlocked(binding_id: int) -> None:
     task = CUSTOMER_BOT_POLLING_TASKS.pop(binding_id, None)
     if task and not task.done():
         task.cancel()
@@ -115,6 +125,12 @@ async def deactivate_customer_bot_binding(binding_id: int) -> None:
         CUSTOMER_BOTS_BY_TOKEN.pop(_bot_token(customer_bot), None)
         with suppress(Exception):
             await customer_bot.session.close()
+
+
+async def deactivate_customer_bot_binding(binding_id: int) -> None:
+    binding_id = int(binding_id)
+    async with _lock_for(binding_id):
+        await _deactivate_customer_bot_binding_unlocked(binding_id)
 
 
 async def shutdown_customer_bots(*args: Any, **kwargs: Any) -> None:

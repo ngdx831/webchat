@@ -41,6 +41,22 @@ class CustomerBotPollingStaticTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("ok", result.stdout)
 
+    def test_customer_bot_activation_paths_are_serialized_by_binding_lock(self):
+        source = (ROOT / "bot" / "customer_bots.py").read_text(encoding="utf-8")
+        activate = source[
+            source.index("async def activate_customer_bot_binding"):
+            source.index("async def deactivate_customer_bot_binding")
+        ]
+        deactivate = source[
+            source.index("async def deactivate_customer_bot_binding"):
+            source.index("async def shutdown_customer_bots")
+        ]
+
+        self.assertIn("_binding_locks", source)
+        self.assertIn("async with _lock_for(binding_id):", activate)
+        self.assertIn("async with _lock_for(binding_id):", deactivate)
+        self.assertNotIn("await deactivate_customer_bot_binding(binding_id)", activate)
+
 
 if __name__ == "__main__":
     unittest.main()
