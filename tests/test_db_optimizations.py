@@ -116,6 +116,15 @@ class DatabaseOptimizationTests(unittest.TestCase):
         pragma_loop = body[loop_at:body.index("return conn")]
         self.assertNotIn("PRAGMA foreign_keys=ON", pragma_loop)
 
+    def test_sessions_stream_token_compat_column_is_added_after_table_creation(self):
+        source = (os.path.dirname(dbm.__file__) + os.sep + "schema.py")
+        with open(source, "r", encoding="utf-8") as f:
+            body = f.read()
+
+        create_sessions_at = body.index("CREATE TABLE IF NOT EXISTS sessions")
+        add_stream_token_at = body.index('_add_column(conn, "sessions", "stream_token TEXT DEFAULT \'\'")')
+        self.assertLess(create_sessions_at, add_stream_token_at)
+
 
 if __name__ == "__main__":
     unittest.main()

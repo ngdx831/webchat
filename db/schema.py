@@ -17,7 +17,6 @@ def init_db(conn: sqlite3.Connection) -> None:
         updated_ts INTEGER NOT NULL
     )
     """)
-    _add_column(conn, "sessions", "stream_token TEXT DEFAULT ''")
 
     conn.execute("""
     CREATE TABLE IF NOT EXISTS widgets(
@@ -53,6 +52,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         last_activity_ts INTEGER NOT NULL
     )
     """)
+    _add_column(conn, "sessions", "stream_token TEXT DEFAULT ''")
 
     conn.execute("""
     CREATE TABLE IF NOT EXISTS events(
