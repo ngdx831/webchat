@@ -59,6 +59,15 @@ class StaticProjectHygieneTests(unittest.TestCase):
         self.assertGreaterEqual(source.count("logger.warning("), 4)
         self.assertIn("exc_info=True", source)
 
+    def test_customer_bot_commands_are_documented_as_user_entry_commands(self):
+        source = (ROOT / "README.md").read_text(encoding="utf-8")
+        user_commands = source[source.index("### 用户入口命令"):source.index("### VIP 和管理员命令")]
+        admin_commands = source[source.index("### 管理员命令"):source.index("### 客服会话命令")]
+
+        for command in ("/botadd", "/botdel", "/botls"):
+            self.assertIn(command, user_commands)
+            self.assertNotIn(command, admin_commands)
+
 
 if __name__ == "__main__":
     unittest.main()
