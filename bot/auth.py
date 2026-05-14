@@ -11,10 +11,9 @@ def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 
-def current_user_from_message(conn, msg: Message) -> Optional[Dict[str, Any]]:
-    if not getattr(msg, "from_user", None):
+def current_user_from_telegram_user(conn, tg_user) -> Optional[Dict[str, Any]]:
+    if not tg_user:
         return None
-    tg_user = msg.from_user
     user_id = int(tg_user.id)
     default_role = dbm.USER_ROLE_ADMIN if is_admin(user_id) else dbm.USER_ROLE_NORMAL
     username = getattr(tg_user, "username", "") or ""
@@ -26,6 +25,10 @@ def current_user_from_message(conn, msg: Message) -> Optional[Dict[str, Any]]:
         display_name,
         default_role=default_role,
     )
+
+
+def current_user_from_message(conn, msg: Message) -> Optional[Dict[str, Any]]:
+    return current_user_from_telegram_user(conn, getattr(msg, "from_user", None))
 
 
 def is_vip_or_admin(user: Optional[Dict[str, Any]]) -> bool:
@@ -85,13 +88,20 @@ def open_user_context(msg: Message):
     return conn, user
 
 
+def open_user_context_from_telegram_user(tg_user):
+    conn = track_connection(dbm.get_conn(DB_PATH))
+    dbm.init_db(conn)
+    user = current_user_from_telegram_user(conn, tg_user)
+    return conn, user
+
+
 def vip_key_context(msg: Message, key: str):
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        return conn, user, None, "Account disabled. Please contact admin."
+        return conn, user, None, "账号已禁用，请联系管理员。"
     if not is_vip_or_admin(user):
-        return conn, user, None, "VIP feature required. Please contact admin."
+        return conn, user, None, "该功能需要 VIP 或管理员权限，请联系管理员。"
     widget = require_owned_key(conn, user, key)
     if not widget:
-        return conn, user, None, "Permission denied or key not found."
+        return conn, user, None, "没有权限，或 key 不存在。"
     return conn, user, widget, ""
