@@ -1,0 +1,224 @@
+from aiogram import Bot, F
+from aiogram.types import CallbackQuery
+
+import db as dbm
+
+from ..auth import (
+    is_vip_or_admin,
+    open_user_context_from_telegram_user,
+    require_enabled_user,
+    require_owned_key,
+)
+from ..customer_bots import is_main_bot
+from ..key_management_ui import (
+    format_key_info_text,
+    key_actions_keyboard,
+    quick_reply_management_keyboard,
+    quick_reply_management_text,
+)
+from ..runtime import dp
+from ..validators import explain_key_error, validate_key
+
+
+async def _answer_error(call: CallbackQuery, text: str) -> None:
+    await call.answer(text, show_alert=True)
+
+
+async def _replace_or_send(call: CallbackQuery, text: str, reply_markup=None) -> None:
+    if not call.message:
+        await call.answer("当前消息不可操作，请重新发送命令。", show_alert=True)
+        return
+    try:
+        await call.message.edit_text(text, reply_markup=reply_markup)
+    except Exception:
+        await call.message.answer(text, reply_markup=reply_markup)
+
+
+def _chat_type(call: CallbackQuery) -> str:
+    return str(getattr(getattr(call.message, "chat", None), "type", "") or "")
+
+
+def _chat_id(call: CallbackQuery) -> int | None:
+    chat = getattr(call.message, "chat", None)
+    if not chat:
+        return None
+    return int(chat.id)
+
+
+def _callback_key_context(call: CallbackQuery, key: str):
+    conn, user = open_user_context_from_telegram_user(call.from_user)
+    if not require_enabled_user(user):
+        return conn, user, None, "账号已禁用，请联系管理员。"
+    try:
+        key = validate_key(key)
+    except Exception as exc:
+        return conn, user, None, explain_key_error(str(exc))
+    widget = require_owned_key(conn, user, key)
+    if not widget:
+        return conn, user, None, "没有权限，或 key 不存在。"
+    return conn, user, widget, ""
+
+
+def _callback_vip_key_context(call: CallbackQuery, key: str):
+    conn, user, widget, error = _callback_key_context(call, key)
+    if error:
+        return conn, user, widget, error
+    if not is_vip_or_admin(user):
+        return conn, user, widget, "自动回复是 VIP/管理员功能，请联系管理员开通。"
+    return conn, user, widget, ""
+
+
+async def _show_key_actions(call: CallbackQuery, widget) -> None:
+    await _replace_or_send(
+        call,
+        format_key_info_text(widget),
+        reply_markup=key_actions_keyboard(widget["key"]),
+    )
+
+
+async def _show_quick_reply_menu(call: CallbackQuery, conn, key: str) -> None:
+    rows = dbm.quick_reply_list(conn, key, enabled_only=False)
+    await _replace_or_send(
+        call,
+        quick_reply_management_text(key, rows),
+        reply_markup=quick_reply_management_keyboard(key, rows),
+    )
+
+
+@dp.callback_query(F.data.startswith("km:"))
+async def handle_key_management_callback(call: CallbackQuery, bot: Bot):
+    if not is_main_bot(bot):
+        return
+    data = call.data or ""
+    parts = data.split(":", 2)
+    if len(parts) != 3:
+        await _answer_error(call, "按钮数据无效，请重新发送命令。")
+        return
+
+    action, key = parts[1], parts[2]
+    conn, user, widget, error = _callback_key_context(call, key)
+    if error:
+        await _answer_error(call, error)
+        return
+
+    if action == "open":
+        await _show_key_actions(call, widget)
+        await call.answer()
+        return
+
+    if action == "bot":
+        if not call.message:
+            await _answer_error(call, "当前消息不可操作，请重新发送命令。")
+            return
+        if _chat_type(call) != "private":
+            await _answer_error(call, "请在主机器人私聊中点击“绑定机器人”，避免 Token 泄露。")
+            return
+        dbm.pending_action_set(
+            conn,
+            int(user["telegram_user_id"]),
+            "await_token",
+            key=widget["key"],
+            ttl_seconds=300,
+        )
+        await call.message.answer(f"请在 5 分钟内发送 key `{widget['key']}` 对应的客户机器人 Token。")
+        await call.answer("已进入绑定机器人流程")
+        return
+
+    if action == "grp":
+        if not call.message:
+            await _answer_error(call, "当前消息不可操作，请重新发送命令。")
+            return
+        if _chat_type(call) != "supergroup":
+            await call.message.answer(
+                "绑定客服群需要在目标超级群里操作：\n"
+                f"1. 把主机器人拉进目标超级群；\n"
+                f"2. 在群里发送 /groupbind {widget['key']}；\n"
+                "3. 群需要开启话题功能。"
+            )
+            await call.answer()
+            return
+        chat_id = _chat_id(call)
+        if chat_id is None:
+            await _answer_error(call, "无法读取当前群 ID，请改用 /groupbind。")
+            return
+        dbm.widget_set_forum_chat_id(conn, widget["key"], chat_id)
+        widget = dbm.widget_get(conn, widget["key"]) or widget
+        await _show_key_actions(call, widget)
+        await call.answer("已绑定当前客服群")
+        return
+
+    if action == "qr":
+        conn, user, widget, error = _callback_vip_key_context(call, key)
+        if error:
+            await _answer_error(call, error)
+            return
+        await _show_quick_reply_menu(call, conn, widget["key"])
+        await call.answer()
+        return
+
+    await _answer_error(call, "未知操作，请重新发送命令。")
+
+
+@dp.callback_query(F.data.startswith("qrm:"))
+async def handle_quick_reply_management_callback(call: CallbackQuery, bot: Bot):
+    if not is_main_bot(bot):
+        return
+    data = call.data or ""
+    parts = data.split(":", 3)
+    if len(parts) < 3:
+        await _answer_error(call, "按钮数据无效，请重新发送命令。")
+        return
+
+    action = parts[1]
+    key = parts[2]
+    conn, user, widget, error = _callback_vip_key_context(call, key)
+    if error:
+        await _answer_error(call, error)
+        return
+
+    if action == "add":
+        if not call.message:
+            await _answer_error(call, "当前消息不可操作，请重新发送命令。")
+            return
+        if _chat_type(call) != "private":
+            await _answer_error(call, "请在主机器人私聊中添加自动回复。")
+            return
+        dbm.pending_action_set(
+            conn,
+            int(user["telegram_user_id"]),
+            "await_quick_reply",
+            key=widget["key"],
+            ttl_seconds=300,
+        )
+        await call.message.answer(
+            f"请在 5 分钟内发送 key `{widget['key']}` 的自动回复，格式：\n"
+            "标题|答案"
+        )
+        await call.answer("已进入添加自动回复流程")
+        return
+
+    if action == "del":
+        if len(parts) != 4:
+            await _answer_error(call, "缺少自动回复编号。")
+            return
+        try:
+            reply_id = int(parts[3])
+        except Exception:
+            await _answer_error(call, "自动回复编号无效。")
+            return
+        dbm.quick_reply_delete(conn, widget["key"], reply_id)
+        await _show_quick_reply_menu(call, conn, widget["key"])
+        await call.answer("已删除")
+        return
+
+    if action == "refresh":
+        await _show_quick_reply_menu(call, conn, widget["key"])
+        await call.answer("已刷新")
+        return
+
+    if action == "back":
+        await _show_key_actions(call, widget)
+        await call.answer()
+        return
+
+    await _answer_error(call, "未知操作，请重新发送命令。")
