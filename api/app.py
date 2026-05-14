@@ -47,7 +47,6 @@ def create_app() -> Flask:
     @app.after_request
     def _security_headers(resp):
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-        resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "no-referrer")
         return resp
 
