@@ -1,4 +1,10 @@
-const pathKey = decodeURIComponent(location.pathname.replace(/^\/+/, "").split("/")[0] || "");
+    function keyFromPath() {
+      const parts = location.pathname.replace(/^\/+/, "").split("/").filter(Boolean);
+      if (parts[0] === "widget" && parts[1]) return decodeURIComponent(parts[1]);
+      return decodeURIComponent(parts[0] || "");
+    }
+
+    const pathKey = keyFromPath();
     const params = new URLSearchParams(location.search);
     const sourceCode = params.get("src") || "";
     const visitorKey = `webchat:visitor:${pathKey}`;
