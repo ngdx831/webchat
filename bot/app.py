@@ -7,6 +7,7 @@ import db as dbm
 from config import BOT_TOKEN, DB_PATH
 
 from . import handlers  # noqa: F401  # importing registers handlers on dp
+from .command_catalog import setup_main_bot_commands
 from .customer_bots import activate_customer_bot_binding, shutdown_customer_bots
 from .runtime import dp, get_main_bot
 
@@ -15,6 +16,10 @@ async def main() -> None:
     if not BOT_TOKEN:
         raise RuntimeError("WEBCHAT_BOT_TOKEN not set")
     main_bot = get_main_bot()
+    try:
+        await setup_main_bot_commands(main_bot)
+    except Exception as exc:
+        print(f"设置中文命令说明失败：{exc}")
     with contextlib.closing(dbm.get_conn(DB_PATH)) as conn:
         dbm.init_db(conn)
         for binding in dbm.bot_binding_list(conn, enabled_only=True):

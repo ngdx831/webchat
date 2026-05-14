@@ -96,11 +96,17 @@
 - 入口所属用户必须是未禁用的 VIP 或管理员；普通用户或已禁用用户返回 403 `WEB_DISABLED`。
 - `/chat/{key}` 和 `/api/widget/{key}` 不再作为入口使用。
 
+### `GET /widget/{key}` 作为挂件地址
+
+当浏览器或 iframe 直接访问 `GET /widget/{key}`，且请求不是前端配置请求时，接口会返回 `public/chat.html`，可作为 iframe 挂件地址使用。页面脚本会从 `/widget/{key}` 路径中识别真实 `key`，再携带 `visitor_id` 调用同一路径获取 JSON 配置。
+
+iframe 嵌入不再默认返回 `X-Frame-Options: DENY`，页面 CSP 也不再声明 `frame-ancestors 'none'`。
+
 ## 获取客服入口信息
 
 ### `GET /widget/{key}`
 
-获取客服入口配置、快速回复和来源点击统计。该接口不会创建人工客服会话；客户真正发送人工消息时才创建会话和客服群话题。
+当前端以配置请求方式调用，例如携带 `visitor_id`，该接口返回客服入口配置、自动回复和来源点击统计。该接口不会创建人工客服会话；客户真正发送人工消息时才创建会话和客服群话题。
 
 入口所属用户必须是未禁用的 VIP 或管理员；普通用户或已禁用用户返回 403 `WEB_DISABLED`。
 
@@ -145,7 +151,7 @@
 | `offline_msg` | 离线提示文案。 |
 | `offline_at` | 最近一次设置离线的时间。 |
 | `waiting_hint` | 展示给客户的等待提示文案。 |
-| `quick_replies` | 快速回复列表。点击快速回复不创建会话，也不进入来源统计。 |
+| `quick_replies` | 自动回复列表。点击自动回复不创建会话，也不进入来源统计。 |
 
 ## 发送访客消息
 

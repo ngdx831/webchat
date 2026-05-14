@@ -11,6 +11,7 @@ from ..auth import (
     require_owned_key,
 )
 from ..customer_bots import is_main_bot
+from ..key_management_ui import key_actions_keyboard, key_list_keyboard
 from ..runtime import dp
 from ..validators import explain_key_error, validate_key
 from .admin_users import _admin_context_or_reply
@@ -21,19 +22,19 @@ def _resolve_kls_target_user_id(text: str, user) -> tuple[int | None, str]:
     if len(parts) < 2:
         return int(user["telegram_user_id"]), ""
     if not is_admin_user(user):
-        return None, "Permission denied. Use /kls without arguments to list your keys."
+        return None, "没有权限。普通用户请直接发送 /kls 查看自己的 key。"
     try:
         return int(parts[1].strip()), ""
     except Exception:
-        return None, "Usage: /kls [telegram_user_id]"
+        return None, "用法：/kls [telegram_user_id]"
 
 
 def _format_kls_rows(target_user_id: int, rows) -> str:
     if not rows:
-        return f"(no keys for user {target_user_id})"
-    lines = [f"Keys for user {target_user_id}:"]
+        return f"用户 {target_user_id} 暂无 key。"
+    lines = [f"用户 {target_user_id} 的 key："]
     for row in rows:
-        status = "online" if int(row.get("enabled") or 0) else "offline"
+        status = "在线" if int(row.get("enabled") or 0) else "离线"
         lines.append(f"- {row['key']}: {row.get('display_name') or ''} {status}")
     return "\n".join(lines)
 
@@ -46,7 +47,7 @@ async def cmd_kadd(msg: Message, bot: Bot):
 
     parts = (msg.text or "").split(maxsplit=3)
     if len(parts) < 4:
-        await msg.reply("Usage: /kadd <key> <forum_chat_id> <display_name>")
+        await msg.reply("用法：/kadd <key> <客服群ID> <显示名>")
         return
 
     _, key, forum_chat_id_s, display_name = parts
@@ -59,7 +60,7 @@ async def cmd_kadd(msg: Message, bot: Bot):
     try:
         forum_chat_id = int(forum_chat_id_s)
     except Exception:
-        await msg.reply("forum_chat_id must be a number, for example -1001234567890.")
+        await msg.reply("客服群 ID 必须是数字，例如 -1001234567890。")
         return
 
     existing_widget = dbm.widget_get(conn, key)
@@ -77,9 +78,12 @@ async def cmd_kadd(msg: Message, bot: Bot):
             must_not_exist=False,
             owner_user_id=owner_user_id,
         )
-        await msg.reply(f"Key configured:\nkey: {key}\nforum_chat_id: {forum_chat_id}\ndisplay_name: {display_name}")
+        await msg.reply(
+            f"已配置 key：{key}\n客服群 ID：{forum_chat_id}\n显示名：{display_name}",
+            reply_markup=key_actions_keyboard(key),
+        )
     except Exception as e:
-        await msg.reply(f"Key configuration failed: {e}")
+        await msg.reply(f"key 配置失败：{e}")
 
 
 @dp.message(Command("kdel"))
@@ -90,7 +94,7 @@ async def cmd_kdel(msg: Message, bot: Bot):
 
     parts = (msg.text or "").split(maxsplit=1)
     if len(parts) < 2:
-        await msg.reply("Usage: /kdel <key>")
+        await msg.reply("用法：/kdel <key>")
         return
 
     try:
@@ -105,7 +109,7 @@ async def cmd_kdel(msg: Message, bot: Bot):
         await deactivate_customer_bot_binding(int(row["id"]))
     dbm.bot_binding_delete(conn, key)
     deleted = dbm.widget_del(conn, key)
-    await msg.reply(f"Key deleted: {key}" if deleted else f"Key not found: {key}")
+    await msg.reply(f"已删除 key：{key}" if deleted else f"key 不存在：{key}")
 
 
 @dp.message(Command("kls"))
@@ -114,7 +118,7 @@ async def cmd_kls(msg: Message, bot: Bot):
         return
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        await msg.reply("Account disabled. Please contact admin.")
+        await msg.reply("账号已禁用，请联系管理员。")
         return
 
     target_user_id, error = _resolve_kls_target_user_id(msg.text or "", user)
@@ -122,13 +126,13 @@ async def cmd_kls(msg: Message, bot: Bot):
         await msg.reply(error)
         return
     if target_user_id is None:
-        await msg.reply("Usage: /kls [telegram_user_id]")
+        await msg.reply("用法：/kls [telegram_user_id]")
         return
     if target_user_id != int(user["telegram_user_id"]) and not dbm.user_get(conn, target_user_id):
-        await msg.reply(f"User not found: {target_user_id}")
+        await msg.reply(f"用户不存在：{target_user_id}")
         return
     rows = dbm.widget_list_by_owner(conn, target_user_id, limit=200)
-    await msg.reply(_format_kls_rows(target_user_id, rows))
+    await msg.reply(_format_kls_rows(target_user_id, rows), reply_markup=key_list_keyboard(rows))
 
 
 @dp.message(Command("koff"))
@@ -137,12 +141,12 @@ async def cmd_koff(msg: Message, bot: Bot):
         return
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        await msg.reply("Account disabled. Please contact admin.")
+        await msg.reply("账号已禁用，请联系管理员。")
         return
 
     parts = (msg.text or "").split(maxsplit=2)
     if len(parts) < 2:
-        await msg.reply("Usage: /koff <key> [offline_message]")
+        await msg.reply("用法：/koff <key> [离线提示]")
         return
 
     key = parts[1].strip()
@@ -155,13 +159,13 @@ async def cmd_koff(msg: Message, bot: Bot):
 
     widget = require_owned_key(conn, user, key)
     if not widget:
-        await msg.reply("Permission denied or key not found.")
+        await msg.reply("没有权限，或 key 不存在。")
         return
 
     display_name = widget.get("display_name") or key
-    msg_text = custom or f"{display_name} is currently offline. Please leave a message."
+    msg_text = custom or f"{display_name} 当前离线，请先留言。"
     ok = dbm.widget_set_enabled(conn, key, 0, msg_text)
-    await msg.reply(f"Key offline: {key}\nmessage: {msg_text}" if ok else f"Key not found: {key}")
+    await msg.reply(f"key 已离线：{key}\n提示：{msg_text}" if ok else f"key 不存在：{key}")
 
 
 @dp.message(Command("kon"))
@@ -170,12 +174,12 @@ async def cmd_kon(msg: Message, bot: Bot):
         return
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        await msg.reply("Account disabled. Please contact admin.")
+        await msg.reply("账号已禁用，请联系管理员。")
         return
 
     parts = (msg.text or "").split(maxsplit=1)
     if len(parts) < 2:
-        await msg.reply("Usage: /kon <key>")
+        await msg.reply("用法：/kon <key>")
         return
 
     try:
@@ -185,10 +189,10 @@ async def cmd_kon(msg: Message, bot: Bot):
         return
 
     if not require_owned_key(conn, user, key):
-        await msg.reply("Permission denied or key not found.")
+        await msg.reply("没有权限，或 key 不存在。")
         return
     ok = dbm.widget_set_enabled(conn, key, 1, None)
-    await msg.reply(f"Key online: {key}" if ok else f"Key not found: {key}")
+    await msg.reply(f"key 已在线：{key}" if ok else f"key 不存在：{key}")
 
 
 @dp.message(Command("kmsg"))
@@ -197,12 +201,12 @@ async def cmd_kmsg(msg: Message, bot: Bot):
         return
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        await msg.reply("Account disabled. Please contact admin.")
+        await msg.reply("账号已禁用，请联系管理员。")
         return
 
     parts = (msg.text or "").split(maxsplit=2)
     if len(parts) < 3:
-        await msg.reply("Usage: /kmsg <key> <offline_message>")
+        await msg.reply("用法：/kmsg <key> <离线提示>")
         return
 
     key = parts[1].strip()
@@ -216,7 +220,7 @@ async def cmd_kmsg(msg: Message, bot: Bot):
         return
 
     if not require_owned_key(conn, user, key):
-        await msg.reply("Permission denied or key not found.")
+        await msg.reply("没有权限，或 key 不存在。")
         return
     ok = dbm.widget_set_offline_msg(conn, key, text)
-    await msg.reply(f"Offline message updated: {key}\n{text}" if ok else f"Key not found: {key}")
+    await msg.reply(f"已更新离线提示：{key}\n{text}" if ok else f"key 不存在：{key}")

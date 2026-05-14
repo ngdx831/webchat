@@ -9,6 +9,7 @@ from . import binding  # noqa: F401
 from . import admin_users  # noqa: F401
 from . import admin_entries  # noqa: F401
 from . import customer_bots  # noqa: F401
+from . import key_actions  # noqa: F401
 from . import quick_replies  # noqa: F401
 from . import stats  # noqa: F401
 from . import session_cmds  # noqa: F401

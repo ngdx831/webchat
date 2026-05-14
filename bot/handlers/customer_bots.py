@@ -27,7 +27,7 @@ async def cmd_botadd(msg: Message, bot: Bot):
         return
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        await msg.reply("Account disabled. Please contact admin.")
+        await msg.reply("账号已禁用，请联系管理员。")
         return
 
     parts = (msg.text or "").split(maxsplit=3)
@@ -44,7 +44,7 @@ async def cmd_botadd(msg: Message, bot: Bot):
 
     widget = require_owned_key(conn, user, key)
     if not widget:
-        await msg.reply("Permission denied or key not found.")
+        await msg.reply("没有权限，或 key 不存在。")
         return
 
     probe = Bot(token)
@@ -81,7 +81,7 @@ async def cmd_botdel(msg: Message, bot: Bot):
         return
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        await msg.reply("Account disabled. Please contact admin.")
+        await msg.reply("账号已禁用，请联系管理员。")
         return
     parts = (msg.text or "").split(maxsplit=2)
     if len(parts) < 2:
@@ -95,7 +95,7 @@ async def cmd_botdel(msg: Message, bot: Bot):
         await msg.reply(explain_key_error(str(e)))
         return
     if not require_owned_key(conn, user, key):
-        await msg.reply("Permission denied or key not found.")
+        await msg.reply("没有权限，或 key 不存在。")
         return
     rows = dbm.bot_binding_list(conn, key)
     if username:
@@ -112,7 +112,7 @@ async def cmd_botls(msg: Message, bot: Bot):
         return
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        await msg.reply("Account disabled. Please contact admin.")
+        await msg.reply("账号已禁用，请联系管理员。")
         return
     parts = (msg.text or "").split(maxsplit=1)
     key = parts[1].strip() if len(parts) > 1 else ""
@@ -123,7 +123,7 @@ async def cmd_botls(msg: Message, bot: Bot):
             await msg.reply(explain_key_error(str(e)))
             return
         if not require_owned_key(conn, user, key):
-            await msg.reply("Permission denied or key not found.")
+            await msg.reply("没有权限，或 key 不存在。")
             return
     elif not is_admin_user(user):
         await msg.reply("用法：/botls <key>")

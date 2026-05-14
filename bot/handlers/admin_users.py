@@ -12,6 +12,7 @@ from ..auth import (
     require_enabled_user,
 )
 from ..customer_bots import deactivate_customer_bot_binding, is_main_bot
+from ..key_management_ui import key_actions_keyboard, key_list_keyboard
 from ..runtime import dp
 from ..validators import explain_key_error, validate_key
 
@@ -21,10 +22,10 @@ async def _admin_context_or_reply(msg: Message, bot: Bot):
         return None, None, False
     conn, user = open_user_context(msg)
     if not require_enabled_user(user):
-        await msg.reply("Account disabled. Please contact admin.")
+        await msg.reply("账号已禁用，请联系管理员。")
         return conn, user, False
     if not is_admin_user(user):
-        await msg.reply("Permission denied.")
+        await msg.reply("没有权限。")
         return conn, user, False
     return conn, user, True
 
@@ -59,15 +60,15 @@ async def cmd_userls(msg: Message, bot: Bot):
     elif flt in dbm.USER_ROLES:
         rows = dbm.user_list(conn, role=flt, limit=200)
     elif flt:
-        await msg.reply("Usage: /userls [normal|vip|admin|disabled]")
+        await msg.reply("用法：/userls [normal|vip|admin|disabled]")
         return
     else:
         rows = dbm.user_list(conn, limit=200)
 
     if not rows:
-        await msg.reply("(no users)")
+        await msg.reply("暂无用户。")
         return
-    await msg.reply("Users:\n" + "\n".join(_format_user_line(row) for row in rows))
+    await msg.reply("用户列表：\n" + "\n".join(_format_user_line(row) for row in rows))
 
 
 @dp.message(Command("userget"))
@@ -77,19 +78,19 @@ async def cmd_userget(msg: Message, bot: Bot):
         return
     user_id = _parse_user_id_arg(msg.text or "")
     if user_id is None:
-        await msg.reply("Usage: /userget <telegram_user_id>")
+        await msg.reply("用法：/userget <telegram_user_id>")
         return
     user = dbm.user_get(conn, user_id)
     if not user:
-        await msg.reply(f"User not found: {user_id}")
+        await msg.reply(f"用户不存在：{user_id}")
         return
     await msg.reply(
-        "User:\n"
+        "用户资料：\n"
         f"id: {user['telegram_user_id']}\n"
         f"username: {user.get('username') or ''}\n"
-        f"display_name: {user.get('display_name') or ''}\n"
-        f"role: {user.get('role') or ''}\n"
-        f"enabled: {int(user.get('enabled') or 0)}\n"
+        f"显示名：{user.get('display_name') or ''}\n"
+        f"角色：{user.get('role') or ''}\n"
+        f"启用：{int(user.get('enabled') or 0)}\n"
         f"vip_until: {user.get('vip_until') or ''}"
     )
 
@@ -101,22 +102,22 @@ async def cmd_userset(msg: Message, bot: Bot):
         return
     parts = (msg.text or "").split(maxsplit=2)
     if len(parts) < 3:
-        await msg.reply("Usage: /userset <telegram_user_id> <normal|vip|admin>")
+        await msg.reply("用法：/userset <telegram_user_id> <normal|vip|admin>")
         return
     try:
         user_id = int(parts[1])
     except Exception:
-        await msg.reply("telegram_user_id must be a number.")
+        await msg.reply("telegram_user_id 必须是数字。")
         return
     try:
         user = dbm.user_set_role(conn, user_id, parts[2].strip())
     except ValueError:
-        await msg.reply("Role must be normal, vip, or admin.")
+        await msg.reply("角色必须是 normal、vip 或 admin。")
         return
     if not user:
-        await msg.reply(f"User not found: {user_id}")
+        await msg.reply(f"用户不存在：{user_id}")
         return
-    await msg.reply(f"User updated: {user_id}\nrole: {user['role']}")
+    await msg.reply(f"已更新用户：{user_id}\n角色：{user['role']}")
 
 
 @dp.message(Command("userban"))
@@ -126,13 +127,13 @@ async def cmd_userban(msg: Message, bot: Bot):
         return
     user_id = _parse_user_id_arg(msg.text or "")
     if user_id is None:
-        await msg.reply("Usage: /userban <telegram_user_id>")
+        await msg.reply("用法：/userban <telegram_user_id>")
         return
     user = dbm.user_set_enabled(conn, user_id, False)
     if not user:
-        await msg.reply(f"User not found: {user_id}")
+        await msg.reply(f"用户不存在：{user_id}")
         return
-    await msg.reply(f"User updated: {user_id}\nenabled: {int(user.get('enabled') or 0)}")
+    await msg.reply(f"已更新用户：{user_id}\n启用：{int(user.get('enabled') or 0)}")
 
 
 @dp.message(Command("userunban"))
@@ -142,13 +143,13 @@ async def cmd_userunban(msg: Message, bot: Bot):
         return
     user_id = _parse_user_id_arg(msg.text or "")
     if user_id is None:
-        await msg.reply("Usage: /userunban <telegram_user_id>")
+        await msg.reply("用法：/userunban <telegram_user_id>")
         return
     user = dbm.user_set_enabled(conn, user_id, True)
     if not user:
-        await msg.reply(f"User not found: {user_id}")
+        await msg.reply(f"用户不存在：{user_id}")
         return
-    await msg.reply(f"User updated: {user_id}\nenabled: {int(user.get('enabled') or 0)}")
+    await msg.reply(f"已更新用户：{user_id}\n启用：{int(user.get('enabled') or 0)}")
 
 
 @dp.message(Command("userkeys"))
@@ -158,20 +159,20 @@ async def cmd_userkeys(msg: Message, bot: Bot):
         return
     user_id = _parse_user_id_arg(msg.text or "")
     if user_id is None:
-        await msg.reply("Usage: /userkeys <telegram_user_id>")
+        await msg.reply("用法：/userkeys <telegram_user_id>")
         return
     if not dbm.user_get(conn, user_id):
-        await msg.reply(f"User not found: {user_id}")
+        await msg.reply(f"用户不存在：{user_id}")
         return
     rows = dbm.widget_list_by_owner(conn, user_id, limit=200)
     if not rows:
-        await msg.reply(f"(no keys for user {user_id})")
+        await msg.reply(f"用户 {user_id} 暂无 key。")
         return
-    lines = [f"Keys for user {user_id}:"]
+    lines = [f"用户 {user_id} 的 key："]
     for row in rows:
-        status = "online" if int(row.get("enabled") or 0) else "offline"
+        status = "在线" if int(row.get("enabled") or 0) else "离线"
         lines.append(f"- {row['key']}: {row.get('display_name') or ''} {status}")
-    await msg.reply("\n".join(lines))
+    await msg.reply("\n".join(lines), reply_markup=key_list_keyboard(rows))
 
 
 @dp.message(Command("adminkeyinfo"))
@@ -181,7 +182,7 @@ async def cmd_adminkeyinfo(msg: Message, bot: Bot):
         return
     parts = (msg.text or "").split(maxsplit=1)
     if len(parts) < 2:
-        await msg.reply("Usage: /adminkeyinfo <key>")
+        await msg.reply("用法：/adminkeyinfo <key>")
         return
     try:
         key = validate_key(parts[1].strip())
@@ -190,28 +191,28 @@ async def cmd_adminkeyinfo(msg: Message, bot: Bot):
         return
     widget = dbm.widget_get(conn, key)
     if not widget:
-        await msg.reply(f"Key not found: {key}")
+        await msg.reply(f"key 不存在：{key}")
         return
     owner = dbm.user_get(conn, int(widget["owner_user_id"])) if widget.get("owner_user_id") is not None else None
     lines = [
-        "Key:",
+        "key 详情：",
         f"key: {widget['key']}",
-        f"display_name: {widget.get('display_name') or ''}",
+        f"显示名：{widget.get('display_name') or ''}",
         f"owner_user_id: {widget.get('owner_user_id') if widget.get('owner_user_id') is not None else '-'}",
         f"owner_role: {(owner or {}).get('role') or '-'}",
         f"owner_enabled: {int((owner or {}).get('enabled') or 0) if owner else '-'}",
-        f"forum_chat_id: {widget.get('forum_chat_id')}",
-        f"enabled: {int(widget.get('enabled') or 0)}",
-        f"offline_msg: {widget.get('offline_msg') or ''}",
-        f"welcome_text: {widget.get('welcome_text') or ''}",
+        f"客服群 ID：{widget.get('forum_chat_id')}",
+        f"启用：{int(widget.get('enabled') or 0)}",
+        f"离线提示：{widget.get('offline_msg') or ''}",
+        f"欢迎语：{widget.get('welcome_text') or ''}",
     ]
     bindings = dbm.bot_binding_list(conn, key)
     if bindings:
-        lines.append("bot_bindings:")
+        lines.append("机器人绑定：")
         for row in bindings:
-            status = "enabled" if int(row.get("enabled") or 0) else "disabled"
+            status = "启用" if int(row.get("enabled") or 0) else "停用"
             lines.append(f"- #{row['id']} @{row.get('bot_username') or '-'} {status}")
-    await msg.reply("\n".join(lines))
+    await msg.reply("\n".join(lines), reply_markup=key_actions_keyboard(key))
 
 
 @dp.message(Command("adminkeydel"))
@@ -221,7 +222,7 @@ async def cmd_adminkeydel(msg: Message, bot: Bot):
         return
     parts = (msg.text or "").split(maxsplit=1)
     if len(parts) < 2:
-        await msg.reply("Usage: /adminkeydel <key>")
+        await msg.reply("用法：/adminkeydel <key>")
         return
     try:
         key = validate_key(parts[1].strip())
@@ -229,7 +230,7 @@ async def cmd_adminkeydel(msg: Message, bot: Bot):
         await msg.reply(explain_key_error(str(e)))
         return
     if not dbm.widget_get(conn, key):
-        await msg.reply(f"Key not found: {key}")
+        await msg.reply(f"key 不存在：{key}")
         return
     bindings = dbm.bot_binding_list(conn, key)
     for row in bindings:
@@ -237,6 +238,6 @@ async def cmd_adminkeydel(msg: Message, bot: Bot):
     binding_count = dbm.bot_binding_delete(conn, key)
     deleted = dbm.widget_del(conn, key)
     await msg.reply(
-        f"Key deleted: {key}\nbot_bindings_deleted: {binding_count}"
-        if deleted else f"Key not found: {key}"
+        f"已删除 key：{key}\n删除机器人绑定数：{binding_count}"
+        if deleted else f"key 不存在：{key}"
     )
