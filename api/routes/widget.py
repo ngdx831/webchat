@@ -13,11 +13,31 @@ from ..validators import json_error, validate_key_api, validate_source_code
 bp = Blueprint("widget", __name__)
 
 
+def _wants_widget_page() -> bool:
+    if "visitor_id" in request.args:
+        return False
+    fetch_dest = (request.headers.get("Sec-Fetch-Dest") or "").lower()
+    if fetch_dest in {"document", "iframe"}:
+        return True
+    accept = (request.headers.get("Accept") or "").lower()
+    return "text/html" in accept and "application/json" not in accept
+
+
+def _send_chat_page(kk: str):
+    conn = get_conn()
+    _, error = web_widget_or_error(conn, kk)
+    if error:
+        return error
+    return send_from_directory(PUBLIC_DIR, "chat.html")
+
+
 @bp.get("/widget/<key>")
 def api_widget(key: str):
     kk = validate_key_api(key)
     if not kk:
         return json_error(400, "BAD_KEY")
+    if _wants_widget_page():
+        return _send_chat_page(kk)
 
     source_code = validate_source_code(request.args.get("src") or request.args.get("source") or "")
     visitor_id = (request.args.get("visitor_id") or "").strip()
@@ -58,8 +78,4 @@ def chat_page(key: str):
     kk = validate_key_api(key)
     if not kk:
         return json_error(404, "NOT_FOUND")
-    conn = get_conn()
-    _, error = web_widget_or_error(conn, kk)
-    if error:
-        return error
-    return send_from_directory(PUBLIC_DIR, "chat.html")
+    return _send_chat_page(kk)
