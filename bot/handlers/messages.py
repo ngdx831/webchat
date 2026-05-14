@@ -48,6 +48,7 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
     visitor_id = str(msg.from_user.id if msg.from_user else msg.chat.id)
     source_code = dbm.source_click_latest(conn, key, "telegram", visitor_id)
     session = dbm.session_find_customer(conn, int(binding["id"]), int(msg.chat.id))
+    session_created = False
     if not session:
         session_id = uuid.uuid4().hex
         dbm.session_create_if_missing(
@@ -65,6 +66,7 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
             dbm.source_session_add(conn, key, source_code, "telegram", visitor_id, session_id)
         dbm.ensure_system_event(conn, session_id, "Telegram 客户机器人会话已创建。", marker="tg_customer")
         session = dbm.session_get(conn, session_id)
+        session_created = True
     if not session:
         await msg.answer("创建客服会话失败，请稍后再试。")
         return
@@ -80,7 +82,8 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
             return
         dbm.event_add(conn, session["session_id"], role="user", kind="text", text=text)
         await send_support_text(forum_chat_id, thread_id, text, label=f"{from_label}（TG）")
-        await msg.answer("已转人工客服，请稍等。")
+        if session_created:
+            await msg.answer("已转人工客服，请稍等。")
         return
 
     file_id = ""
@@ -120,7 +123,8 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
         )
         dbm.media_asset_upsert(conn, session["session_id"], file_id, kind, local_path, ttl_seconds=MEDIA_TTL_SECONDS)
         await send_support_media(forum_chat_id, thread_id, kind, local_path, caption=caption)
-        await msg.answer("已转人工客服，请稍等。")
+        if session_created:
+            await msg.answer("已转人工客服，请稍等。")
     except Exception as exc:
         await msg.answer(f"媒体转发失败，请改用文字描述。错误：{exc}")
 

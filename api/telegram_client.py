@@ -49,12 +49,28 @@ def tg_create_topic(forum_chat_id: int, topic_name: str) -> int:
 
 
 def tg_delete_topic(forum_chat_id: int, thread_id: int) -> None:
+    """删除话题及其全部消息。
+
+    `deleteForumTopic` 在 TG 端是原子操作，话题连同里面的全部消息一起消失，
+    不再回退到 closeForumTopic（那只是关闭话题，消息会留在群里），
+    这样满足"会话过期 → 客服群消息和话题一起删除"的语义。
+
+    话题已被人工删除 / 不存在时，TG 会返回 "message thread not found" / "topic was deleted"
+    等描述，我们当作幂等成功。其他错误（权限不足、网络）原样抛出，调用方记录日志。
+    """
     payload = {"chat_id": int(forum_chat_id), "message_thread_id": int(thread_id)}
     try:
         tg_call("deleteForumTopic", payload)
-    except TelegramAPIError:
-        # 删除失败(权限/已删),退化为 close;close 再失败就抛上去。
-        tg_call("closeForumTopic", payload)
+    except TelegramAPIError as exc:
+        desc = (exc.description or "").lower()
+        if (
+            "message thread not found" in desc
+            or "topic_deleted" in desc
+            or "topic was deleted" in desc
+            or "thread not found" in desc
+        ):
+            return
+        raise
 
 
 def tg_send_message(forum_chat_id: int, thread_id: int, text: str) -> None:

@@ -65,9 +65,10 @@ async def cmd_keyadd(msg: Message, bot: Bot):
             await msg.reply(f"key 已存在：{key}")
             return
         raise
+    bindings = dbm.bot_binding_list(conn, key)
     await msg.reply(
         f"已创建 key：{key}\n显示名：{display_name}",
-        reply_markup=key_actions_keyboard(key),
+        reply_markup=key_actions_keyboard(key, bindings),
     )
 
 
@@ -95,7 +96,11 @@ async def cmd_keyinfo(msg: Message, bot: Bot):
     if not widget:
         await msg.reply("没有权限，或 key 不存在。")
         return
-    await msg.reply(_key_info_text(widget), reply_markup=key_actions_keyboard(key))
+    bindings = dbm.bot_binding_list(conn, key)
+    await msg.reply(
+        format_key_info_text(widget, bindings),
+        reply_markup=key_actions_keyboard(key, bindings),
+    )
 
 
 @dp.message(Command("keydel"))

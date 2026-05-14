@@ -2,10 +2,15 @@ import asyncio
 import logging
 import os
 from contextlib import suppress
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import requests
-from aiogram.types import FSInputFile
+from aiogram.types import (
+    FSInputFile,
+    InputMediaDocument,
+    InputMediaPhoto,
+    InputMediaVideo,
+)
 
 import db as dbm
 from config import API_HOST, API_PORT, RESOLVED_INTERNAL_TOKEN
@@ -159,6 +164,74 @@ async def _send_customer_media(customer_bot, chat_id: int, kind: str, rel_path: 
         await customer_bot.send_message(chat_id=chat_id, text=f"Media unavailable: {kind or 'file'}")
 
 
+def _input_media_for(kind: str, path: str, caption: str = ""):
+    if kind == "video":
+        return InputMediaVideo(media=FSInputFile(path), caption=caption or None)
+    if kind == "document":
+        return InputMediaDocument(media=FSInputFile(path), caption=caption or None)
+    return InputMediaPhoto(media=FSInputFile(path), caption=caption or None)
+
+
+async def _send_customer_media_group(
+    customer_bot,
+    chat_id: int,
+    items: List[Dict[str, Any]],
+    caption: str = "",
+) -> None:
+    """以本地文件重新上传方式整组发出（最多 10 项），不带任何 forward 元信息。
+
+    - TG sendMediaGroup 单组最多 10 项，多余的分批；
+    - caption 只挂在第一项上，符合 TG 标准展示；
+    - 任意一项的本地文件缺失时降级为逐条 _send_customer_media。
+    """
+    valid: List[Dict[str, Any]] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        rel = item.get("local_path") or ""
+        if not rel:
+            continue
+        abs_p = abs_public_path(rel)
+        if not abs_p or not os.path.exists(abs_p):
+            continue
+        valid.append({
+            "type": item.get("type") or "photo",
+            "path": abs_p,
+            "rel_path": rel,
+        })
+
+    if not valid:
+        for item in items or []:
+            await _send_customer_media(
+                customer_bot,
+                chat_id,
+                (item or {}).get("type") or "document",
+                (item or {}).get("local_path") or "",
+                "",
+            )
+        return
+
+    if len(valid) == 1:
+        await _send_customer_media(customer_bot, chat_id, valid[0]["type"], valid[0]["rel_path"], caption)
+        return
+
+    for batch_start in range(0, len(valid), 10):
+        batch = valid[batch_start:batch_start + 10]
+        media: List[Any] = []
+        for idx, it in enumerate(batch):
+            cap = caption if (batch_start == 0 and idx == 0) else ""
+            media.append(_input_media_for(it["type"], it["path"], cap))
+        try:
+            await customer_bot.send_media_group(chat_id=chat_id, media=media)
+        except Exception as exc:
+            logger.warning(
+                "customer media_group send failed: chat_id=%s size=%s error=%s",
+                chat_id, len(batch), exc,
+            )
+            for it in batch:
+                await _send_customer_media(customer_bot, chat_id, it["type"], it["rel_path"], "")
+
+
 async def send_event_to_customer(conn, session: Dict[str, Any], event: Dict[str, Any]) -> None:
     if session.get("channel") != "telegram":
         await notify_web(session["session_id"], event)
@@ -188,16 +261,21 @@ async def send_event_to_customer(conn, session: Dict[str, Any], event: Dict[str,
     elif kind == "document":
         await _send_customer_media(customer_bot, chat_id, "document", event.get("local_path") or "", caption)
     elif kind == "note":
-        title = event.get("title") or "客服笔记"
-        body = event.get("body") or ""
-        await customer_bot.send_message(chat_id=chat_id, text="\n".join([x for x in [title, body] if x]))
-        for item in event.get("media") or []:
-            if not isinstance(item, dict):
-                continue
-            await _send_customer_media(
-                customer_bot,
-                chat_id,
-                item.get("type") or "document",
-                item.get("local_path") or "",
-                item.get("caption") or "",
-            )
+        title = (event.get("title") or "").strip()
+        body = (event.get("body") or "").strip()
+        media_items = [m for m in (event.get("media") or []) if isinstance(m, dict)]
+        note_caption = "\n".join([x for x in [title, body] if x]).strip()
+
+        if not media_items:
+            if note_caption:
+                await customer_bot.send_message(chat_id=chat_id, text=note_caption)
+            return
+
+        # 整组媒体作为客户机器人发出的新消息，不带 forward 来源。
+        # caption 直接挂在媒体组首项上，避免多发一条纯文本。
+        await _send_customer_media_group(
+            customer_bot,
+            chat_id,
+            media_items,
+            caption=note_caption,
+        )

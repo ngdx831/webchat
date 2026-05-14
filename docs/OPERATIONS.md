@@ -387,29 +387,24 @@ location / {
 
 `/kls` 只列出当前账号自己的所有入口。管理员需要查看其他账号时，执行 `/kls <telegram_user_id>`，必要时再执行 `/adminkeyinfo <key>` 查看详情。
 
-下班：
+切换上/下班状态：
 
 ```text
-/koff yaoyao 客服已下班，请留言，我们上班后会回复。
+/kstatus yaoyao        # 仅切换 yaoyao 这个 key
+/kstatus               # 不带参数：按多数决统一切换名下全部 key
 ```
 
-上班：
+更新下班留言（也可在 `/kls → 选择 key → 🛌 下班留言` 按钮里设置）：
 
 ```text
-/kon yaoyao
+/kls
+# 选 yaoyao → 点「🛌 下班留言」→ 私聊里发送新的下班留言文本
 ```
 
-更新离线提示：
-
-```text
-/kmsg yaoyao 客服暂时离线，请留下联系方式。
-```
-
-设置全局帮助和管理员联系方式：
+设置全局帮助链接（显示在主机器人 /start 和 /help 末尾）：
 
 ```text
 /helplink https://你的域名/help
-/admincontact @admin_username
 ```
 
 VIP 或管理员查看来源统计和维护快速回复：
