@@ -1,4 +1,4 @@
-# WebChat
+# WebChat-tg
 
 WebChat 是一个基于 Flask 和 Telegram Bot 的客服系统。网页访客或客户侧 Telegram 机器人发起人工咨询后，系统会为该客户会话创建一个 Telegram 论坛话题；客服在话题里回复，系统再把回复推回网页端或客户侧 Telegram 私聊。
 
