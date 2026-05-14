@@ -1,6 +1,6 @@
 import contextlib
 
-from aiogram import Bot
+from aiogram import Bot, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
@@ -9,6 +9,7 @@ from config import DB_PATH
 
 from ..auth import vip_key_context
 from ..customer_bots import binding_for_bot, is_main_bot
+from ..key_management_ui import quick_reply_management_keyboard, quick_reply_management_text
 from ..runtime import dp
 
 
@@ -37,10 +38,14 @@ async def cmd_qradd(msg: Message, bot: Bot):
         return
     current = dbm.quick_reply_list(conn, key, enabled_only=False)
     if len([x for x in current if int(x.get("enabled") or 0)]) >= 9:
-        await msg.reply("❌ 每个 key 最多建议配置 9 个快速回复，请先删除不用的项")
+        await msg.reply("❌ 每个 key 最多建议配置 9 个自动回复，请先删除不用的项")
         return
     reply_id = dbm.quick_reply_add(conn, key, title, answer, sort_order=len(current) + 1)
-    await msg.reply(f"✅ 已添加快速回复 #{reply_id}\n{title}")
+    rows = dbm.quick_reply_list(conn, key, enabled_only=False)
+    await msg.reply(
+        f"✅ 已添加自动回复 #{reply_id}\n{title}",
+        reply_markup=quick_reply_management_keyboard(key, rows),
+    )
 
 
 @dp.message(Command("qrls"))
@@ -58,13 +63,15 @@ async def cmd_qrls(msg: Message, bot: Bot):
         return
     rows = dbm.quick_reply_list(conn, key, enabled_only=False)
     if not rows:
-        await msg.reply("（暂无快速回复）")
+        await msg.reply(
+            "暂无自动回复。",
+            reply_markup=quick_reply_management_keyboard(key, rows),
+        )
         return
-    lines = [f"💬 {key} 快速回复："]
-    for item in rows:
-        status = "启用" if int(item.get("enabled") or 0) else "停用"
-        lines.append(f"• #{item['id']} {item['title']}（{status}）")
-    await msg.reply("\n".join(lines))
+    await msg.reply(
+        quick_reply_management_text(key, rows),
+        reply_markup=quick_reply_management_keyboard(key, rows),
+    )
 
 
 @dp.message(Command("qrdel"))
@@ -86,10 +93,14 @@ async def cmd_qrdel(msg: Message, bot: Bot):
         await msg.reply(permission_error)
         return
     count = dbm.quick_reply_delete(conn, key, reply_id)
-    await msg.reply("✅ 已删除" if count else "⚠️ 没有找到对应快速回复")
+    rows = dbm.quick_reply_list(conn, key, enabled_only=False)
+    await msg.reply(
+        "✅ 已删除" if count else "⚠️ 没有找到对应自动回复",
+        reply_markup=quick_reply_management_keyboard(key, rows),
+    )
 
 
-@dp.callback_query()
+@dp.callback_query(F.data.startswith("qr:"))
 async def handle_quick_reply_callback(call: CallbackQuery, bot: Bot):
     binding = binding_for_bot(bot)
     if not binding:
