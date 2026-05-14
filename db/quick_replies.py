@@ -40,3 +40,30 @@ def quick_reply_delete(conn: sqlite3.Connection, key: str, reply_id: int) -> int
     cur = conn.execute("DELETE FROM quick_replies WHERE key=? AND id=?", (key, int(reply_id)))
     conn.commit()
     return cur.rowcount
+
+
+def quick_reply_set_title(conn: sqlite3.Connection, key: str, reply_id: int, title: str) -> int:
+    cur = conn.execute(
+        "UPDATE quick_replies SET title=?, updated_ts=? WHERE key=? AND id=?",
+        (title.strip(), _utc_now_ts(), key, int(reply_id)),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def quick_reply_set_answer(conn: sqlite3.Connection, key: str, reply_id: int, answer: str) -> int:
+    cur = conn.execute(
+        "UPDATE quick_replies SET answer=?, updated_ts=? WHERE key=? AND id=?",
+        (answer.strip(), _utc_now_ts(), key, int(reply_id)),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def quick_reply_set_enabled(conn: sqlite3.Connection, key: str, reply_id: int, enabled: int) -> int:
+    cur = conn.execute(
+        "UPDATE quick_replies SET enabled=?, updated_ts=? WHERE key=? AND id=?",
+        (1 if int(enabled) else 0, _utc_now_ts(), key, int(reply_id)),
+    )
+    conn.commit()
+    return cur.rowcount

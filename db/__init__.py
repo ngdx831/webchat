@@ -60,6 +60,9 @@ from .quick_replies import (
     quick_reply_list,
     quick_reply_get,
     quick_reply_delete,
+    quick_reply_set_title,
+    quick_reply_set_answer,
+    quick_reply_set_enabled,
 )
 from .stats import (
     source_click_add,

@@ -1,3 +1,5 @@
+from typing import List
+
 from aiogram import Bot
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -11,7 +13,7 @@ from ..auth import (
     require_owned_key,
 )
 from ..customer_bots import is_main_bot
-from ..key_management_ui import key_actions_keyboard, key_list_keyboard
+from ..key_management_ui import format_kls_rows, key_actions_keyboard, key_list_keyboard
 from ..runtime import dp
 from ..validators import explain_key_error, validate_key
 from .admin_users import _admin_context_or_reply
@@ -27,16 +29,6 @@ def _resolve_kls_target_user_id(text: str, user) -> tuple[int | None, str]:
         return int(parts[1].strip()), ""
     except Exception:
         return None, "用法：/kls [telegram_user_id]"
-
-
-def _format_kls_rows(target_user_id: int, rows) -> str:
-    if not rows:
-        return f"用户 {target_user_id} 暂无 key。"
-    lines = [f"用户 {target_user_id} 的 key："]
-    for row in rows:
-        status = "在线" if int(row.get("enabled") or 0) else "离线"
-        lines.append(f"- {row['key']}: {row.get('display_name') or ''} {status}")
-    return "\n".join(lines)
 
 
 @dp.message(Command("kadd"))
@@ -78,9 +70,10 @@ async def cmd_kadd(msg: Message, bot: Bot):
             must_not_exist=False,
             owner_user_id=owner_user_id,
         )
+        bindings = dbm.bot_binding_list(conn, key)
         await msg.reply(
             f"已配置 key：{key}\n客服群 ID：{forum_chat_id}\n显示名：{display_name}",
-            reply_markup=key_actions_keyboard(key),
+            reply_markup=key_actions_keyboard(key, bindings),
         )
     except Exception as e:
         await msg.reply(f"key 配置失败：{e}")
@@ -132,44 +125,41 @@ async def cmd_kls(msg: Message, bot: Bot):
         await msg.reply(f"用户不存在：{target_user_id}")
         return
     rows = dbm.widget_list_by_owner(conn, target_user_id, limit=200)
-    await msg.reply(_format_kls_rows(target_user_id, rows), reply_markup=key_list_keyboard(rows))
+    await msg.reply(format_kls_rows(target_user_id, rows), reply_markup=key_list_keyboard(rows))
 
 
-@dp.message(Command("koff"))
-async def cmd_koff(msg: Message, bot: Bot):
-    if not is_main_bot(bot):
-        return
-    conn, user = open_user_context(msg)
-    if not require_enabled_user(user):
-        await msg.reply("账号已禁用，请联系管理员。")
-        return
+# ===== /kstatus: 统一上/下班 =====
 
-    parts = (msg.text or "").split(maxsplit=2)
-    if len(parts) < 2:
-        await msg.reply("用法：/koff <key> [离线提示]")
-        return
-
-    key = parts[1].strip()
-    custom = parts[2].strip() if len(parts) >= 3 else ""
-    try:
-        key = validate_key(key)
-    except Exception as e:
-        await msg.reply(explain_key_error(str(e)))
-        return
-
-    widget = require_owned_key(conn, user, key)
-    if not widget:
-        await msg.reply("没有权限，或 key 不存在。")
-        return
-
+def _toggle_widget(conn, widget) -> tuple[bool, str]:
+    """切换单个 widget 的 enabled 状态，返回 (新状态_是否在线, 显示名)。"""
+    key = widget["key"]
     display_name = widget.get("display_name") or key
-    msg_text = custom or f"{display_name} 当前离线，请先留言。"
-    ok = dbm.widget_set_enabled(conn, key, 0, msg_text)
-    await msg.reply(f"key 已离线：{key}\n提示：{msg_text}" if ok else f"key 不存在：{key}")
+    current = int(widget.get("enabled") or 0)
+    new_enabled = 0 if current else 1
+    if new_enabled == 0:
+        offline_msg = (widget.get("offline_msg") or "").strip()
+        dbm.widget_set_enabled(conn, key, 0, offline_msg)
+    else:
+        dbm.widget_set_enabled(conn, key, 1, None)
+    return bool(new_enabled), display_name
 
 
-@dp.message(Command("kon"))
-async def cmd_kon(msg: Message, bot: Bot):
+def _format_kstatus_lines(results: List[tuple[str, str, bool]]) -> str:
+    out = []
+    for key, display_name, online in results:
+        label = "已上班" if online else "已下班"
+        prefix = "🟢" if online else "🔴"
+        out.append(f"{prefix} {key}（{display_name}） {label}")
+    return "\n".join(out)
+
+
+@dp.message(Command("kstatus"))
+async def cmd_kstatus(msg: Message, bot: Bot):
+    """切换上/下班状态。
+
+    - 带 key 参数：仅对该 key 切换；管理员也只能切自己拥有的 key。
+    - 无参数：对当前用户名下全部 key 统一切换（按多数决：多数在线则全部下班，否则全部上班）。
+    """
     if not is_main_bot(bot):
         return
     conn, user = open_user_context(msg)
@@ -178,49 +168,43 @@ async def cmd_kon(msg: Message, bot: Bot):
         return
 
     parts = (msg.text or "").split(maxsplit=1)
-    if len(parts) < 2:
-        await msg.reply("用法：/kon <key>")
+    if len(parts) > 1 and parts[1].strip():
+        key = parts[1].strip()
+        try:
+            key = validate_key(key)
+        except Exception as e:
+            await msg.reply(explain_key_error(str(e)))
+            return
+        widget = require_owned_key(conn, user, key)
+        if not widget or widget.get("owner_user_id") != int(user["telegram_user_id"]):
+            await msg.reply("没有权限，或 key 不存在。")
+            return
+        online, display_name = _toggle_widget(conn, widget)
+        await msg.reply(_format_kstatus_lines([(key, display_name, online)]))
         return
 
-    try:
-        key = validate_key(parts[1].strip())
-    except Exception as e:
-        await msg.reply(explain_key_error(str(e)))
+    owner_id = int(user["telegram_user_id"])
+    widgets = dbm.widget_list_by_owner(conn, owner_id, limit=500)
+    if not widgets:
+        await msg.reply("你名下还没有 key。可用 /keyadd <key> <显示名> 创建。")
         return
 
-    if not require_owned_key(conn, user, key):
-        await msg.reply("没有权限，或 key 不存在。")
-        return
-    ok = dbm.widget_set_enabled(conn, key, 1, None)
-    await msg.reply(f"key 已在线：{key}" if ok else f"key 不存在：{key}")
+    online_count = sum(1 for w in widgets if int(w.get("enabled") or 0))
+    target_online = online_count <= (len(widgets) - online_count)  # 多数在线则统一下班；否则统一上班
+    results: List[tuple[str, str, bool]] = []
+    for widget in widgets:
+        full = dbm.widget_get(conn, widget["key"])
+        if not full or full.get("owner_user_id") != owner_id:
+            continue
+        if bool(int(full.get("enabled") or 0)) == target_online:
+            results.append((full["key"], full.get("display_name") or full["key"], target_online))
+            continue
+        if target_online:
+            dbm.widget_set_enabled(conn, full["key"], 1, None)
+        else:
+            offline_msg = (full.get("offline_msg") or "").strip()
+            dbm.widget_set_enabled(conn, full["key"], 0, offline_msg)
+        results.append((full["key"], full.get("display_name") or full["key"], target_online))
 
-
-@dp.message(Command("kmsg"))
-async def cmd_kmsg(msg: Message, bot: Bot):
-    if not is_main_bot(bot):
-        return
-    conn, user = open_user_context(msg)
-    if not require_enabled_user(user):
-        await msg.reply("账号已禁用，请联系管理员。")
-        return
-
-    parts = (msg.text or "").split(maxsplit=2)
-    if len(parts) < 3:
-        await msg.reply("用法：/kmsg <key> <离线提示>")
-        return
-
-    key = parts[1].strip()
-    from config import MAX_RICH_TEXT_LENGTH
-
-    text = parts[2].strip()[: int(MAX_RICH_TEXT_LENGTH)]
-    try:
-        key = validate_key(key)
-    except Exception as e:
-        await msg.reply(explain_key_error(str(e)))
-        return
-
-    if not require_owned_key(conn, user, key):
-        await msg.reply("没有权限，或 key 不存在。")
-        return
-    ok = dbm.widget_set_offline_msg(conn, key, text)
-    await msg.reply(f"已更新离线提示：{key}\n{text}" if ok else f"key 不存在：{key}")
+    header = "✅ 已统一上班" if target_online else "🛌 已统一下班"
+    await msg.reply(header + "\n" + _format_kstatus_lines(results))

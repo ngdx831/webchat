@@ -21,6 +21,7 @@
     const notifiedEventIds = new Set();
     const notifiedEventQueue = [];
     let notificationPermissionRequested = false;
+    let audioCtx = null;
 
     function rememberLimited(set, queue, id, limit = 200) {
       if (!id) return false;
@@ -38,6 +39,11 @@
     function markSeen(id) {
       const value = id ? String(id) : "";
       if (value) rememberLimited(seenIds, seenQueue, value);
+    }
+
+    function markNotified(id) {
+      const value = id ? String(id) : "";
+      if (value) rememberLimited(notifiedEventIds, notifiedEventQueue, value);
     }
 
     // 仅允许 http/https/相对路径作为媒体 URL,杜绝 javascript: 等危险协议。
@@ -65,6 +71,7 @@
     const quickReplies = document.getElementById("quickReplies");
     const displayName = document.getElementById("displayName");
     const statusText = document.getElementById("statusText");
+    const notice = document.getElementById("notice");
 
     function cryptoRandom() {
       if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replaceAll("-", "");
@@ -122,13 +129,92 @@
       return "Notification" in window;
     }
 
-    function requestNotificationPermission() {
+    function showNotice(text, onClick) {
+      if (!notice) return;
+      notice.textContent = text;
+      notice.dataset.show = "1";
+      notice.onclick = () => {
+        if (typeof onClick === "function") onClick();
+      };
+    }
+
+    function hideNotice() {
+      if (!notice) return;
+      notice.dataset.show = "";
+      notice.onclick = null;
+    }
+
+    function refreshNotificationHint() {
+      if (!notificationSupported()) {
+        hideNotice();
+        return;
+      }
+      if (Notification.permission === "granted") {
+        hideNotice();
+        return;
+      }
+      if (Notification.permission === "denied") {
+        showNotice("浏览器通知被禁用，新消息将仅以声音提示。");
+        return;
+      }
+      showNotice("点这里开启新消息提醒（声音 + 浏览器通知）", () => {
+        requestNotificationPermission(true);
+      });
+    }
+
+    function requestNotificationPermission(force) {
       if (!notificationSupported()) return;
-      if (Notification.permission !== "default") return;
-      if (notificationPermissionRequested) return;
+      if (Notification.permission !== "default") {
+        refreshNotificationHint();
+        return;
+      }
+      if (notificationPermissionRequested && !force) return;
       notificationPermissionRequested = true;
-      const request = Notification.requestPermission();
-      if (request && typeof request.catch === "function") request.catch(() => {});
+      try {
+        // 跨域 iframe 必须由父页加 allow="notifications" 才能成功；
+        // 这里照样发起请求，被浏览器拒了之后我们仍能播放页内声音兜底。
+        const request = Notification.requestPermission();
+        if (request && typeof request.then === "function") {
+          request.then(() => refreshNotificationHint()).catch(() => refreshNotificationHint());
+        } else {
+          refreshNotificationHint();
+        }
+      } catch (_) {
+        refreshNotificationHint();
+      }
+    }
+
+    function ensureAudio() {
+      if (audioCtx) return audioCtx;
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      try {
+        audioCtx = new Ctx();
+      } catch (_) {
+        audioCtx = null;
+      }
+      return audioCtx;
+    }
+
+    function playDing() {
+      const ctx = ensureAudio();
+      if (!ctx) return;
+      try {
+        if (ctx.state === "suspended" && typeof ctx.resume === "function") {
+          ctx.resume().catch(() => {});
+        }
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, now);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.4);
+      } catch (_) {}
     }
 
     function notificationBody(message) {
@@ -143,13 +229,19 @@
 
     function maybeNotifyAgentMessage(message) {
       if (message.role !== "agent") return;
-      if (!document.hidden) return;
-      if (!notificationSupported()) return;
-      if (Notification.permission !== "granted") return;
-
       const eventId = message.id ? String(message.id) : "";
       if (rememberLimited(notifiedEventIds, notifiedEventQueue, eventId)) return;
 
+      // 页面在前台 → 播放滴一声；后台 → 弹浏览器通知（如已授权）。
+      if (!document.hidden) {
+        playDing();
+        return;
+      }
+      if (!notificationSupported() || Notification.permission !== "granted") {
+        // 后台且无通知权限：仍然尝试播放声音（部分浏览器后台 AudioContext 会被挂起，无害）。
+        playDing();
+        return;
+      }
       try {
         const notification = new Notification(displayName.textContent || pathKey || "在线客服", {
           body: notificationBody(message),
@@ -179,7 +271,12 @@
       messages.appendChild(box);
       messages.scrollTop = messages.scrollHeight;
       if (message.id) lastEventId = Math.max(lastEventId, Number(message.id) || 0);
-      if (options.notify) maybeNotifyAgentMessage(message);
+      if (options.notify) {
+        maybeNotifyAgentMessage(message);
+      } else if (message.id) {
+        // 历史回放 / 本地回显的消息：登记到通知去重表，避免后续 SSE 重连重复响铃。
+        markNotified(message.id);
+      }
     }
 
     function renderContent(box, message) {
@@ -191,7 +288,7 @@
       } else if (kind === "document") {
         renderDocument(box, message);
       } else if (kind === "note") {
-        renderText(box, message.title || "客服笔记");
+        if (message.title) renderText(box, message.title);
         if (message.body) renderText(box, message.body);
         const grid = document.createElement("div");
         grid.className = "note-grid";
@@ -302,17 +399,25 @@
 
       displayName.textContent = data.display_name || pathKey || "在线客服";
       statusText.textContent = data.enabled ? "在线" : "离线";
-      if (!data.enabled && data.offline_msg) {
-        appendMessage({ role: "system", kind: "text", text: data.offline_msg });
-      } else if (data.waiting_hint) {
+
+      // 欢迎语作为客服角色发出的「招呼」展示；离线时下班留言在欢迎之后。
+      const welcomeText = (data.welcome_text || "").trim();
+      const offlineMsg = (data.offline_msg || "").trim();
+      if (welcomeText) {
+        appendMessage({ role: "agent", kind: "text", text: welcomeText, from_name: data.display_name || "" });
+      }
+      if (!data.enabled && offlineMsg) {
+        appendMessage({ role: "agent", kind: "text", text: offlineMsg, from_name: data.display_name || "" });
+      } else if (data.enabled && data.waiting_hint && !welcomeText) {
         appendMessage({ role: "system", kind: "text", text: data.waiting_hint });
       }
-      renderQuickReplies(data.quick_replies || []);
+      renderQuickReplies(data.quick_replies || [], data.display_name || "");
       await loadHistory();
       connectStream();
+      refreshNotificationHint();
     }
 
-    function renderQuickReplies(items) {
+    function renderQuickReplies(items, agentName) {
       quickReplies.innerHTML = "";
       if (!items.length) {
         quickReplies.hidden = true;
@@ -324,8 +429,17 @@
         btn.title = item.title;
         btn.textContent = item.title;
         btn.addEventListener("click", () => {
+          // 触发用户手势上下文：顺便申请通知权限并解锁 AudioContext。
+          requestNotificationPermission();
+          ensureAudio();
           appendMessage({ role: "user", kind: "text", text: item.title });
-          appendMessage({ role: "system", kind: "text", text: item.answer });
+          // 自动回复以「客服回复」的正常样式显示，而不是系统提示。
+          appendMessage({
+            role: "agent",
+            kind: "text",
+            text: item.answer,
+            from_name: agentName || displayName.textContent || ""
+          });
         });
         quickReplies.appendChild(btn);
       });
@@ -349,7 +463,7 @@
       if (data.truncated) {
         appendMessage({ role: "system", kind: "text", text: "— 仅显示最近的消息,更早的记录已不可见 —" });
       }
-      (data.events || []).forEach(appendMessage);
+      (data.events || []).forEach((ev) => appendMessage(ev));
     }
 
     function connectStream(force) {
@@ -369,6 +483,8 @@
     async function sendMessage() {
       const text = input.value.trim();
       if (!text) return;
+      // 用户主动发送是最稳定的「用户手势」时机：解锁 AudioContext 并申请通知权限。
+      ensureAudio();
       requestNotificationPermission();
       input.value = "";
       appendMessage({ role: "user", kind: "text", text });
@@ -423,6 +539,15 @@
     window.addEventListener("pagehide", () => {
       if (stream) { stream.close(); stream = null; }
     });
+
+    // 任意一次用户点击/按键都视为手势，用于解锁 AudioContext 并尝试申请通知权限。
+    function bootstrapGesture() {
+      ensureAudio();
+      requestNotificationPermission();
+    }
+    document.addEventListener("click", bootstrapGesture, { once: false, passive: true });
+    document.addEventListener("touchstart", bootstrapGesture, { once: false, passive: true });
+    input && input.addEventListener("focus", bootstrapGesture);
 
     sendBtn.addEventListener("click", sendMessage);
     input.addEventListener("keydown", (event) => {

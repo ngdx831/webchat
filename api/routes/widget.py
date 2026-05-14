@@ -59,6 +59,7 @@ def api_widget(key: str):
         "visitor_id": visitor_id,
         "source_code": source_code,
         "enabled": int(w.get("enabled") or 0),
+        "welcome_text": w.get("welcome_text") or "",
         "offline_msg": w.get("offline_msg") or "",
         "offline_at": w.get("offline_at") or "",
         "waiting_hint": CUSTOMER_WAITING_HINT,

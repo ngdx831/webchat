@@ -12,10 +12,10 @@ COMMAND_DESCRIPTIONS = {
     "keydel": "删除自己的客服入口 key",
     "tokenadd": "绑定客户侧 Telegram 机器人",
     "groupbind": "绑定当前超级群为客服群",
-    "welcome": "设置客户机器人欢迎语",
     "botadd": "直接绑定客户机器人 Token",
     "botdel": "删除客户机器人绑定",
     "botls": "查看客户机器人绑定",
+    "kstatus": "切换上/下班状态（不带 key 时统一切换）",
     "qradd": "添加自动回复",
     "qrls": "查看和管理自动回复",
     "qrdel": "删除自动回复",
@@ -31,12 +31,8 @@ COMMAND_DESCRIPTIONS = {
     "adminkeyinfo": "查看任意 key 详情",
     "adminkeydel": "删除任意 key",
     "helplink": "设置全局帮助链接",
-    "admincontact": "设置管理员联系方式",
     "kadd": "管理员添加或更新 key",
     "kdel": "管理员删除 key",
-    "koff": "设置 key 离线",
-    "kon": "设置 key 在线",
-    "kmsg": "更新 key 离线提示",
     "valid": "标记当前会话为有效客户",
     "deal": "标记当前会话为成交客户",
     "end": "结束当前客服会话",
@@ -53,10 +49,10 @@ USER_COMMANDS = [
     "keydel",
     "tokenadd",
     "groupbind",
-    "welcome",
     "botadd",
     "botdel",
     "botls",
+    "kstatus",
 ]
 
 VIP_COMMANDS = [
@@ -78,12 +74,8 @@ ADMIN_COMMANDS = [
     "adminkeyinfo",
     "adminkeydel",
     "helplink",
-    "admincontact",
     "kadd",
     "kdel",
-    "koff",
-    "kon",
-    "kmsg",
 ]
 
 SESSION_COMMANDS = ["valid", "deal", "end"]

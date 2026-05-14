@@ -44,7 +44,7 @@ api/  ──►  db/  ◄──  bot/
 | `connection.py` | `get_conn`、时间工具、列检测辅助 |
 | `schema.py` | 建表 DDL、`init_db`、迁移、`cleanup_old` |
 | `users.py` | `users` 表，角色常量 `USER_ROLE_NORMAL/VIP/ADMIN` |
-| `settings.py` | 全局 KV（`helplink`、`admin_contact` 等） |
+| `settings.py` | 全局 KV（`helplink` 等） |
 | `pending.py` | 待处理交互（如 `/tokenadd` 等待 Token 私聊） |
 | `widgets.py` | 客服入口、归属、在线/离线状态、欢迎文案 |
 | `sessions.py` | 客服会话、话题映射、过期清理 |
@@ -94,11 +94,11 @@ bot/
 ├── validators.py       # KEY/SOURCE 校验
 ├── pending.py          # 私聊待处理动作分发（Token 提交等）
 └── handlers/
-    ├── basic.py        # /start /help /adminhelp /helplink /admincontact /myinfo /id
+    ├── basic.py        # /start /help /adminhelp /helplink /myinfo /id + 内联按钮回调
     ├── user_keys.py    # /keyadd /keyinfo /keydel
     ├── binding.py      # /tokenadd /welcome /groupbind
     ├── admin_users.py  # /userls /userget /userset /userban /userunban /userkeys /adminkeyinfo /adminkeydel
-    ├── admin_entries.py # /kadd /kdel /kls /koff /kon /kmsg
+    ├── admin_entries.py # /kadd /kdel /kls /kstatus
     ├── customer_bots.py # /botadd /botdel /botls
     ├── quick_replies.py # /qradd /qrls /qrdel + 内联回调
     ├── stats.py        # /stats /statdel
