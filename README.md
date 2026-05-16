@@ -9,7 +9,7 @@ WebChat 是一个基于 Flask 和 Telegram Bot 的客服系统。网页访客或
 - 多客服入口：使用 `key` 区分不同入口、客服组和显示名。
 - 多用户权限：支持 `normal`、`vip`、`admin` 三类角色，用户只能管理自己名下的入口，管理员可统一管理。
 - Key 数量限制：普通用户最多 1 个 `key`，VIP 最多 5 个，管理员不限制。
-- 网页入口：客户访问 `/<key>?src=abc`，也可以把 `/widget/<key>?src=abc` 作为 iframe 挂件地址；页面内部继续调用 `/widget/<key>?visitor_id=...` 获取配置。**iframe 嵌入提示**：跨域嵌入时必须加 `allow="notifications"`，否则浏览器拒发通知权限请求，前端会自动退化为页内声音提醒。示例：`<iframe src="https://example.com/widget/abc" allow="notifications"></iframe>`。
+- 网页入口：客户访问 `/<key>?src=abc`，也可以把 `/widget/<key>?src=abc` 作为 iframe 挂件地址；页面内部继续调用 `/widget/<key>?visitor_id=...` 获取配置。**iframe 嵌入提示**：跨域嵌入时必须加 `allow="notifications"`，否则浏览器拒发通知权限请求，前端会自动退化为页内声音提醒。挂件会通过 Service Worker (`/sw.js`) 自行弹「通栏通知」，对移动端 Chrome 也有效；只要访客在 iframe 内授权过通知，父页面无需再写 `new Notification(...)` 兜底。示例：`<iframe src="https://example.com/widget/abc" allow="notifications"></iframe>`。
 - 网页能力分级：普通用户可使用客户侧 Telegram 机器人接待客户；VIP 和管理员可使用网页客服入口、来源统计和自动回复。
 - 客户侧 Telegram 机器人：每个 `key` 可以绑定额外 Bot，支持 `/start link123` 来源参数。
 - 交互式绑定：用户可通过 `/tokenadd` 安全提交客户侧 Bot Token，通过 `/groupbind` 在客服群内绑定入口。
