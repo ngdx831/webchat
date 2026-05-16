@@ -32,10 +32,75 @@
       history.scrollRestoration = "manual";
     }
 
-    // 已经授权过的访客:进入页面就把 SW 准备好,确保后台消息能弹通栏。
-    if ("Notification" in window && Notification.permission === "granted") {
+    // SW 注册不需要通知权限,提前注册好,避免后台收到消息时还没准备好。
+    if ("serviceWorker" in navigator) {
       ensureServiceWorker();
     }
+
+    // 调试面板: 给 iframe src 或地址栏加 ?debug=1 即可看到通知/SW 状态,排查移动端弹不出通栏的问题。
+    const debugMode = params.get("debug") === "1";
+    let debugEl = null;
+    if (debugMode) {
+      debugEl = document.getElementById("debug");
+      if (debugEl) {
+        debugEl.hidden = false;
+        const btnTest = document.createElement("button");
+        btnTest.type = "button";
+        btnTest.textContent = "测试通知";
+        btnTest.addEventListener("click", () => {
+          showLocalNotification("测试通知", {
+            body: "如果你看到通栏弹窗,说明 SW 通知正常工作",
+            tag: "webchat-test"
+          }).then((ok) => {
+            debugLog(`测试通知调用结果: ${ok ? "已发出" : "失败(SW/权限均不可用)"}`);
+          });
+        });
+        const btnRefresh = document.createElement("button");
+        btnRefresh.type = "button";
+        btnRefresh.textContent = "刷新状态";
+        btnRefresh.addEventListener("click", () => refreshDebugInfo());
+        debugEl.appendChild(btnTest);
+        debugEl.appendChild(btnRefresh);
+        const pre = document.createElement("div");
+        pre.id = "debug-info";
+        debugEl.appendChild(pre);
+        refreshDebugInfo();
+      }
+    }
+    async function refreshDebugInfo() {
+      if (!debugEl) return;
+      const info = {
+        embedded: embeddedFrame,
+        document_hidden: document.hidden,
+        visibility: document.visibilityState,
+        notification_api: "Notification" in window,
+        notification_permission: ("Notification" in window) ? Notification.permission : "n/a",
+        sw_api: "serviceWorker" in navigator,
+        sw_state: "未注册"
+      };
+      if ("serviceWorker" in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration("/");
+          if (reg) {
+            const w = reg.active || reg.waiting || reg.installing;
+            info.sw_state = w ? w.state : "registered-no-worker";
+            info.sw_scope = reg.scope;
+          }
+        } catch (e) {
+          info.sw_state = `error: ${e.message}`;
+        }
+      }
+      const pre = document.getElementById("debug-info");
+      if (pre) pre.textContent = JSON.stringify(info, null, 2);
+    }
+    function debugLog(msg) {
+      if (!debugEl) return;
+      const pre = document.getElementById("debug-info");
+      if (pre) pre.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n\n` + pre.textContent;
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (debugMode) refreshDebugInfo();
+    });
 
     // 跨域通知父页面（用于 iframe 挂件场景）
     function postParent(type, payload = {}) {
@@ -342,12 +407,19 @@
       });
     }
 
-    function showLocalNotification(title, options) {
+    async function showLocalNotification(title, options) {
       // 优先用 Service Worker 显示通知 —— 移动端浏览器(尤其 Android Chrome)
       // 只有通过 ServiceWorkerRegistration.showNotification 才会出现「通栏」横幅。
-      if (swRegistration && typeof swRegistration.showNotification === "function") {
+      let reg = swRegistration;
+      if (!reg && "serviceWorker" in navigator) {
+        try { reg = await ensureServiceWorker(); } catch (_) {}
+      }
+      if (!reg && "serviceWorker" in navigator) {
+        try { reg = await navigator.serviceWorker.ready; } catch (_) {}
+      }
+      if (reg && typeof reg.showNotification === "function") {
         try {
-          swRegistration.showNotification(title, options);
+          await reg.showNotification(title, options);
           return true;
         } catch (_) {}
       }
@@ -369,30 +441,31 @@
       const body = notificationBody(message);
       const tag = eventId ? `webchat:${pathKey}:${sessionId}:${eventId}` : `webchat:${pathKey}:${sessionId}`;
 
-      // 页面在前台 → 只播放滴声,不弹通知。
+      // 前台:只播放声音。
       if (!document.hidden) {
         playDing();
         return;
       }
 
-      // 页面在后台:优先用 iframe 自己的通知(SW 弹通栏,移动端兼容)。
+      // 后台:优先用 iframe 自己的 SW 通知(移动端能弹通栏);失败再让父页面兜底。
       const ownGranted = notificationSupported() && Notification.permission === "granted";
-      let handled = false;
+      let triedLocal = false;
       if (ownGranted) {
-        handled = showLocalNotification(title, {
+        triedLocal = true;
+        showLocalNotification(title, {
           body,
           tag,
-          renotify: true
+          renotify: true,
+          requireInteraction: false
+        }).then((ok) => {
+          if (!ok) {
+            postParent("new_message", { title, body, tag, page_hidden: true });
+          }
+        }).catch(() => {
+          postParent("new_message", { title, body, tag, page_hidden: true });
         });
-      }
-      // 自身没权限时,委托给父页面尝试弹(桌面端用户的备选方案)。
-      if (!handled) {
-        postParent("new_message", {
-          title,
-          body,
-          tag,
-          page_hidden: document.hidden
-        });
+      } else {
+        postParent("new_message", { title, body, tag, page_hidden: true });
       }
       playDing();
     }
