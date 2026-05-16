@@ -14,6 +14,7 @@ from aiogram.types import (
 
 import db as dbm
 from config import API_HOST, API_PORT, RESOLVED_INTERNAL_TOKEN
+from shared.session_presentation import format_session_header_html, make_topic_name
 
 from .customer_bots import CUSTOMER_BOTS_BY_BINDING_ID
 from .media import abs_public_path
@@ -67,19 +68,6 @@ async def notify_web(session_id: str, event_data: Dict) -> None:
     await http_post_json(API_NOTIFY_URL, {"session_id": session_id, "event": payload}, timeout=2.0)
 
 
-def _rand_topic_tag(n: int = 4) -> str:
-    import secrets
-    import string
-    alphabet = string.ascii_uppercase + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(max(2, int(n))))
-
-
-def _make_topic_name(display_name: str, key: str, channel: str = "web") -> str:
-    prefix = "TG-" if channel == "telegram" else ""
-    base = f"{prefix}{(display_name or key).strip() or key}({key})-{_rand_topic_tag(4)}"
-    return base[:80]
-
-
 async def ensure_support_thread(conn, session: Dict[str, Any], widget: Dict[str, Any]) -> int:
     thread_id = session.get("thread_id")
     if thread_id:
@@ -88,7 +76,10 @@ async def ensure_support_thread(conn, session: Dict[str, Any], widget: Dict[str,
     key = session.get("key") or widget.get("key") or ""
     display_name = widget.get("display_name") or key
     forum_chat_id = int(widget["forum_chat_id"])
-    topic_name = _make_topic_name(display_name, key, session.get("channel") or "web")
+    source_code = session.get("source_code") or ""
+    channel = session.get("channel") or "web"
+    enabled = int(widget.get("enabled") if widget.get("enabled") is not None else 1)
+    topic_name = make_topic_name(display_name, key, source_code)
     bot = get_main_bot()
     topic = await safe_main_bot_call(
         lambda: bot.create_forum_topic(chat_id=forum_chat_id, name=topic_name)
@@ -96,15 +87,14 @@ async def ensure_support_thread(conn, session: Dict[str, Any], widget: Dict[str,
     thread_id = int(topic.message_thread_id)
     dbm.session_set_thread(conn, session["session_id"], thread_id)
 
-    source = session.get("source_code") or "-"
-    channel = "Telegram 客户机器人" if session.get("channel") == "telegram" else "网页"
-    header = (
-        "🔔 <b>新咨询</b>\n"
-        f"入口：<b>{html_escape(key)}</b>（{html_escape(display_name)}）\n"
-        f"渠道：<b>{html_escape(channel)}</b>\n"
-        f"来源：<code>{html_escape(source)}</code>\n"
-        f"会话：<code>{html_escape(session['session_id'])}</code>\n"
-        "——"
+    header = format_session_header_html(
+        session_id=session["session_id"],
+        key=key,
+        display_name=display_name,
+        enabled=enabled,
+        offline_msg=widget.get("offline_msg") or "",
+        channel=channel,
+        source_code=source_code,
     )
     await safe_main_bot_call(lambda: bot.send_message(
         chat_id=forum_chat_id,

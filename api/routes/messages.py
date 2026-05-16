@@ -108,6 +108,8 @@ def api_msg(key: str):
             display_name=display_name,
             enabled=enabled,
             offline_msg=offline_msg,
+            channel="web",
+            source_code=source_code,
             force_new=False,
         )
 
@@ -132,6 +134,8 @@ def api_msg(key: str):
                 display_name=display_name,
                 enabled=enabled,
                 offline_msg=offline_msg,
+                channel="web",
+                source_code=source_code,
                 force_new=True,
             )
             tg_send_message(forum_chat_id, int(thread_id), body)

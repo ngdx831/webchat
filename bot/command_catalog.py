@@ -33,6 +33,7 @@ COMMAND_DESCRIPTIONS = {
     "helplink": "设置全局帮助链接",
     "kadd": "管理员添加或更新 key",
     "kdel": "管理员删除 key",
+    "xxx": "管理员直接管理某个 key",
     "valid": "标记当前会话为有效客户",
     "deal": "标记当前会话为成交客户",
     "end": "结束当前客服会话",
@@ -76,6 +77,7 @@ ADMIN_COMMANDS = [
     "helplink",
     "kadd",
     "kdel",
+    "xxx",
 ]
 
 SESSION_COMMANDS = ["valid", "deal", "end"]

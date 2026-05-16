@@ -1,6 +1,6 @@
 import logging
 
-from flask import Flask
+from flask import Flask, request
 from werkzeug.exceptions import HTTPException
 
 from config import API_HOST, API_PORT, BOT_TOKEN, MAX_REQUEST_BYTES
@@ -47,6 +47,10 @@ def create_app() -> Flask:
     @app.after_request
     def _security_headers(resp):
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        if request.endpoint in {"widget.chat_page", "widget.api_widget"} and resp.mimetype == "text/html":
+            resp.headers.pop("X-Frame-Options", None)
+        else:
+            resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "no-referrer")
         return resp
 

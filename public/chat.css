@@ -165,18 +165,33 @@
 
     .quick button {
       flex: 0 0 auto;
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--text);
-      height: 32px;
+      border: 1px solid #1457c8;
+      background: #e8f1ff;
+      color: #0f3f95;
+      height: 36px;
       border-radius: 6px;
-      padding: 0 10px;
+      padding: 0 12px;
       cursor: pointer;
+      font-weight: 700;
       max-width: 220px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       font-size: 13px;
+      box-shadow: 0 1px 2px rgba(15, 63, 149, .14);
+    }
+
+    .quick button:hover,
+    .quick button:focus-visible {
+      background: #1769e0;
+      border-color: #1769e0;
+      color: #fff;
+      outline: none;
+    }
+
+    .quick button:active {
+      background: #0f55bd;
+      border-color: #0f55bd;
     }
 
     footer {

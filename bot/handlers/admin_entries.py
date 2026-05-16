@@ -31,6 +31,46 @@ def _resolve_kls_target_user_id(text: str, user) -> tuple[int | None, str]:
         return None, "用法：/kls [telegram_user_id]"
 
 
+def _format_admin_key_panel(widget, owner, bindings) -> str:
+    key = widget["key"]
+    status = "online" if int(widget.get("enabled") or 0) else "offline"
+    owner_line = "-"
+    if owner:
+        username = owner.get("username") or "-"
+        owner_line = (
+            f"{widget.get('owner_user_id')} @{username} "
+            f"{owner.get('role') or ''} enabled={int(owner.get('enabled') or 0)}"
+        )
+    lines = [
+        f"管理 key：{key}",
+        f"显示名：{widget.get('display_name') or ''}",
+        f"负责人：{owner_line}",
+        f"客服群：{widget.get('forum_chat_id')}",
+        f"状态：{status}",
+        f"离线提示：{widget.get('offline_msg') or '-'}",
+        f"欢迎语：{widget.get('welcome_text') or '-'}",
+    ]
+    if bindings:
+        bot_lines = []
+        for row in bindings:
+            bot_status = "enabled" if int(row.get("enabled") or 0) else "disabled"
+            bot_lines.append(f"#{row['id']} @{row.get('bot_username') or '-'} {bot_status}")
+        lines.append("客户机器人：" + "；".join(bot_lines))
+    else:
+        lines.append("客户机器人：-")
+    lines.extend([
+        "",
+        "常用操作：",
+        f"/kstatus {key}",
+        f"/botls {key}",
+        f"/qrls {key}",
+        f"/stats {key}",
+        f"/adminkeyinfo {key}",
+        f"/adminkeydel {key}",
+    ])
+    return "\n".join(lines)
+
+
 @dp.message(Command("kadd"))
 async def cmd_kadd(msg: Message, bot: Bot):
     conn, user, ok = await _admin_context_or_reply(msg, bot)
@@ -126,6 +166,34 @@ async def cmd_kls(msg: Message, bot: Bot):
         return
     rows = dbm.widget_list_by_owner(conn, target_user_id, limit=200)
     await msg.reply(format_kls_rows(target_user_id, rows), reply_markup=key_list_keyboard(rows))
+
+
+@dp.message(Command("xxx"))
+async def cmd_xxx(msg: Message, bot: Bot):
+    conn, _, ok = await _admin_context_or_reply(msg, bot)
+    if not ok:
+        return
+
+    parts = (msg.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await msg.reply("用法：/xxx <key>")
+        return
+    try:
+        key = validate_key(parts[1].strip())
+    except Exception as e:
+        await msg.reply(explain_key_error(str(e)))
+        return
+
+    widget = dbm.widget_get(conn, key)
+    if not widget:
+        await msg.reply(f"key 不存在：{key}")
+        return
+    owner = dbm.user_get(conn, int(widget["owner_user_id"])) if widget.get("owner_user_id") is not None else None
+    bindings = dbm.bot_binding_list(conn, key)
+    await msg.reply(
+        _format_admin_key_panel(widget, owner, bindings),
+        reply_markup=key_actions_keyboard(key, bindings),
+    )
 
 
 # ===== /kstatus: 统一上/下班 =====
