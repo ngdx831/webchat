@@ -22,6 +22,40 @@
     const notifiedEventQueue = [];
     let notificationPermissionRequested = false;
     let audioCtx = null;
+    let unreadCount = 0;
+    let parentNotificationPermission = "";
+    const embeddedFrame = window.parent && window.parent !== window;
+
+    if ("scrollRestoration" in history) {
+      history.scrollRestoration = "manual";
+    }
+
+    // 跨域通知父页面（用于 iframe 挂件场景）
+    function postParent(type, payload = {}) {
+      if (!embeddedFrame) return;
+      try {
+        window.parent.postMessage(
+          {
+            source: "webchat-kefu",
+            type: type,
+            key: pathKey,
+            session_id: sessionId,
+            url: location.href,
+            ...payload
+          },
+          '*'
+        );
+      } catch (_) {}
+    }
+
+    window.addEventListener("message", (event) => {
+      const data = event.data || {};
+      if (!data || data.source !== "webchat-kefu-parent") return;
+      if (data.type === "notification_permission") {
+        parentNotificationPermission = data.permission || "";
+        refreshNotificationHint();
+      }
+    });
 
     function rememberLimited(set, queue, id, limit = 200) {
       if (!id) return false;
@@ -145,6 +179,20 @@
     }
 
     function refreshNotificationHint() {
+      if (embeddedFrame) {
+        if (parentNotificationPermission === "granted") {
+          hideNotice();
+          return;
+        }
+        if (parentNotificationPermission === "denied") {
+          showNotice("当前页面通知被禁用，新消息将仅以声音提示。");
+          return;
+        }
+        showNotice("点这里开启新消息提醒（由当前页面弹出授权）", () => {
+          requestNotificationPermission(true);
+        });
+        return;
+      }
       if (!notificationSupported()) {
         hideNotice();
         return;
@@ -163,6 +211,18 @@
     }
 
     function requestNotificationPermission(force) {
+      if (embeddedFrame) {
+        if (notificationPermissionRequested && !force) {
+          refreshNotificationHint();
+          return;
+        }
+        notificationPermissionRequested = true;
+        postParent("request_notification_permission", {
+          title: displayName.textContent || pathKey || "在线客服"
+        });
+        refreshNotificationHint();
+        return;
+      }
       if (!notificationSupported()) return;
       if (Notification.permission !== "default") {
         refreshNotificationHint();
@@ -171,8 +231,6 @@
       if (notificationPermissionRequested && !force) return;
       notificationPermissionRequested = true;
       try {
-        // 跨域 iframe 必须由父页加 allow="notifications" 才能成功；
-        // 这里照样发起请求，被浏览器拒了之后我们仍能播放页内声音兜底。
         const request = Notification.requestPermission();
         if (request && typeof request.then === "function") {
           request.then(() => refreshNotificationHint()).catch(() => refreshNotificationHint());
@@ -227,17 +285,30 @@
       return "客服发来一条新消息";
     }
 
+    function scrollToLatest() {
+      requestAnimationFrame(() => {
+        messages.scrollTop = messages.scrollHeight;
+      });
+    }
+
     function maybeNotifyAgentMessage(message) {
       if (message.role !== "agent") return;
       const eventId = message.id ? String(message.id) : "";
       if (rememberLimited(notifiedEventIds, notifiedEventQueue, eventId)) return;
+
+      postParent("new_message", {
+        title: displayName.textContent || pathKey || "在线客服",
+        body: notificationBody(message),
+        tag: eventId ? `webchat:${pathKey}:${sessionId}:${eventId}` : `webchat:${pathKey}:${sessionId}`,
+        page_hidden: document.hidden
+      });
 
       // 页面在前台 → 播放滴一声；后台 → 弹浏览器通知（如已授权）。
       if (!document.hidden) {
         playDing();
         return;
       }
-      if (!notificationSupported() || Notification.permission !== "granted") {
+      if (embeddedFrame || !notificationSupported() || Notification.permission !== "granted") {
         // 后台且无通知权限：仍然尝试播放声音（部分浏览器后台 AudioContext 会被挂起，无害）。
         playDing();
         return;
@@ -269,10 +340,15 @@
 
       renderContent(box, message);
       messages.appendChild(box);
-      messages.scrollTop = messages.scrollHeight;
+      scrollToLatest();
       if (message.id) lastEventId = Math.max(lastEventId, Number(message.id) || 0);
       if (options.notify) {
         maybeNotifyAgentMessage(message);
+        // 页面隐藏时累计未读数并通知父页面。
+        if (message.role === "agent" && document.hidden) {
+          unreadCount += 1;
+          postParent("unread_update", { unread: unreadCount });
+        }
       } else if (message.id) {
         // 历史回放 / 本地回显的消息：登记到通知去重表，避免后续 SSE 重连重复响铃。
         markNotified(message.id);
@@ -399,6 +475,10 @@
 
       displayName.textContent = data.display_name || pathKey || "在线客服";
       statusText.textContent = data.enabled ? "在线" : "离线";
+      postParent("ready", {
+        title: displayName.textContent || pathKey || "在线客服",
+        notification_permission: embeddedFrame ? parentNotificationPermission : (notificationSupported() ? Notification.permission : "unsupported")
+      });
 
       // 欢迎语作为客服角色发出的「招呼」展示；离线时下班留言在欢迎之后。
       const welcomeText = (data.welcome_text || "").trim();
@@ -464,6 +544,8 @@
         appendMessage({ role: "system", kind: "text", text: "— 仅显示最近的消息,更早的记录已不可见 —" });
       }
       (data.events || []).forEach((ev) => appendMessage(ev));
+      scrollToLatest();
+      setTimeout(scrollToLatest, 50);
     }
 
     function connectStream(force) {
@@ -534,6 +616,11 @@
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
         connectStream();
+        // 回到页面时重置未读计数
+        if (unreadCount > 0) {
+          unreadCount = 0;
+          postParent("unread_update", { unread: 0 });
+        }
       }
     });
     window.addEventListener("pagehide", () => {

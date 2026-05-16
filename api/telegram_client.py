@@ -1,6 +1,4 @@
 import logging
-import secrets
-import string
 from threading import Lock
 from typing import Any, Dict
 
@@ -9,8 +7,7 @@ import requests
 import db as dbm
 from config import BOT_TOKEN
 from shared.errors import TelegramAPIError, scrub_secrets
-
-from .validators import html_escape
+from shared.session_presentation import format_session_header_html, make_topic_name
 
 
 logger = logging.getLogger(__name__)
@@ -91,21 +88,6 @@ def tg_get_file_url(file_id: str) -> str:
     return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
 
 
-def _rand_topic_tag(n: int = 4) -> str:
-    # 方便人工识别：大写字母 + 数字
-    alphabet = string.ascii_uppercase + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(max(2, int(n))))
-
-
-def _make_topic_name(display_name: str, key: str, enabled: int) -> str:
-    """每个会话随机一个名字，避免所有话题都一样。"""
-    display_name = (display_name or key or "").strip() or (key or "")
-    base = f"{display_name}({key})-{_rand_topic_tag(4)}"
-    if int(enabled) == 0:
-        base = "【离线】" + base
-    return base[:80] if len(base) > 80 else base
-
-
 def _send_session_header(
     forum_chat_id: int,
     thread_id: int,
@@ -114,15 +96,17 @@ def _send_session_header(
     display_name: str,
     enabled: int,
     offline_msg: str,
+    channel: str,
+    source_code: str,
 ) -> None:
-    status_line = "离线留言" if int(enabled) == 0 else "在线咨询"
-    off_line = f"\n离线提示：{html_escape(offline_msg)}" if (int(enabled) == 0 and offline_msg) else ""
-    header = (
-        f"🔔 <b>新咨询</b>\n"
-        f"入口：<b>{html_escape(key)}</b>（{html_escape(display_name)}）\n"
-        f"状态：<b>{status_line}</b>{off_line}\n"
-        f"会话：<code>{html_escape(session_id)}</code>\n"
-        f"——\n"
+    header = format_session_header_html(
+        session_id=session_id,
+        key=key,
+        display_name=display_name,
+        enabled=enabled,
+        offline_msg=offline_msg,
+        channel=channel,
+        source_code=source_code,
     )
     tg_send_message(forum_chat_id, int(thread_id), header)
 
@@ -148,6 +132,8 @@ def ensure_thread(
     display_name: str,
     enabled: int,
     offline_msg: str,
+    channel: str = "web",
+    source_code: str = "",
     force_new: bool = False,
 ) -> int:
     """确保 session 有可用 thread_id。
@@ -163,7 +149,7 @@ def ensure_thread(
         if (not force_new) and thread_id:
             return int(thread_id)
 
-        topic_name = _make_topic_name(display_name, key, enabled)
+        topic_name = make_topic_name(display_name, key, source_code)
         thread_id = tg_create_topic(int(forum_chat_id), topic_name)
         try:
             dbm.session_set_thread(conn, session_id, int(thread_id))
@@ -175,7 +161,17 @@ def ensure_thread(
                 logger.exception("tg_delete_topic compensation failed")
             raise
         try:
-            _send_session_header(int(forum_chat_id), int(thread_id), session_id, key, display_name, enabled, offline_msg)
+            _send_session_header(
+                int(forum_chat_id),
+                int(thread_id),
+                session_id,
+                key,
+                display_name,
+                enabled,
+                offline_msg,
+                channel,
+                source_code,
+            )
         except TelegramAPIError:
             # header 发送失败不致命,留 log 即可,thread_id 仍然有效。
             logger.warning("session header send failed: session=%s", session_id)
