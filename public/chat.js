@@ -60,6 +60,11 @@
       if (!data || data.source !== "webchat-kefu-parent") return;
       if (data.type === "notification_permission") {
         parentNotificationPermission = data.permission || "";
+        // 父页面授权后,iframe 通过权限委派也立刻为 granted,这时把 SW 准备好。
+        if (parentNotificationPermission === "granted" &&
+            "Notification" in window && Notification.permission === "granted") {
+          ensureServiceWorker();
+        }
         refreshNotificationHint();
       }
     });
@@ -241,23 +246,12 @@
             title: displayName.textContent || pathKey || "在线客服"
           });
         }
-        // 同时尝试在 iframe 自身申请权限(父页面用 allow="notifications" 委派后,
-        // 浏览器允许子页面自行 requestPermission)。只有 iframe 自己拿到权限,
-        // 才能注册 Service Worker 并在移动端弹「通栏通知」。
-        if (notificationSupported()) {
-          if (Notification.permission === "granted") {
-            ensureServiceWorker();
-          } else if (Notification.permission === "default") {
-            try {
-              const req = Notification.requestPermission();
-              if (req && typeof req.then === "function") {
-                req.then((p) => {
-                  if (p === "granted") ensureServiceWorker();
-                  refreshNotificationHint();
-                }).catch(() => refreshNotificationHint());
-              }
-            } catch (_) {}
-          }
+        // 现代浏览器对 iframe 启用「权限委派 (Permission Delegation)」:
+        // 父页面用 allow="notifications" 委派后,iframe 自身的
+        // Notification.permission 会自动等于父页面的授权状态,不会再弹第二个框。
+        // 所以这里只「读」权限并按需注册 SW,不再主动 requestPermission()。
+        if (notificationSupported() && Notification.permission === "granted") {
+          ensureServiceWorker();
         }
         refreshNotificationHint();
         return;
