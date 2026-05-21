@@ -24,11 +24,83 @@
     let audioCtx = null;
     let unreadCount = 0;
     let parentNotificationPermission = "";
+    let swRegistration = null;
+    let swRegistering = null;
     const embeddedFrame = window.parent && window.parent !== window;
 
     if ("scrollRestoration" in history) {
       history.scrollRestoration = "manual";
     }
+
+    // SW 注册不需要通知权限,提前注册好,避免后台收到消息时还没准备好。
+    if ("serviceWorker" in navigator) {
+      ensureServiceWorker();
+    }
+
+    // 调试面板: 给 iframe src 或地址栏加 ?debug=1 即可看到通知/SW 状态,排查移动端弹不出通栏的问题。
+    const debugMode = params.get("debug") === "1";
+    let debugEl = null;
+    if (debugMode) {
+      debugEl = document.getElementById("debug");
+      if (debugEl) {
+        debugEl.hidden = false;
+        const btnTest = document.createElement("button");
+        btnTest.type = "button";
+        btnTest.textContent = "测试通知";
+        btnTest.addEventListener("click", () => {
+          showLocalNotification("测试通知", {
+            body: "如果你看到通栏弹窗,说明 SW 通知正常工作",
+            tag: "webchat-test"
+          }).then((ok) => {
+            debugLog(`测试通知调用结果: ${ok ? "已发出" : "失败(SW/权限均不可用)"}`);
+          });
+        });
+        const btnRefresh = document.createElement("button");
+        btnRefresh.type = "button";
+        btnRefresh.textContent = "刷新状态";
+        btnRefresh.addEventListener("click", () => refreshDebugInfo());
+        debugEl.appendChild(btnTest);
+        debugEl.appendChild(btnRefresh);
+        const pre = document.createElement("div");
+        pre.id = "debug-info";
+        debugEl.appendChild(pre);
+        refreshDebugInfo();
+      }
+    }
+    async function refreshDebugInfo() {
+      if (!debugEl) return;
+      const info = {
+        embedded: embeddedFrame,
+        document_hidden: document.hidden,
+        visibility: document.visibilityState,
+        notification_api: "Notification" in window,
+        notification_permission: ("Notification" in window) ? Notification.permission : "n/a",
+        sw_api: "serviceWorker" in navigator,
+        sw_state: "未注册"
+      };
+      if ("serviceWorker" in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration("/");
+          if (reg) {
+            const w = reg.active || reg.waiting || reg.installing;
+            info.sw_state = w ? w.state : "registered-no-worker";
+            info.sw_scope = reg.scope;
+          }
+        } catch (e) {
+          info.sw_state = `error: ${e.message}`;
+        }
+      }
+      const pre = document.getElementById("debug-info");
+      if (pre) pre.textContent = JSON.stringify(info, null, 2);
+    }
+    function debugLog(msg) {
+      if (!debugEl) return;
+      const pre = document.getElementById("debug-info");
+      if (pre) pre.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n\n` + pre.textContent;
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (debugMode) refreshDebugInfo();
+    });
 
     // 跨域通知父页面（用于 iframe 挂件场景）
     function postParent(type, payload = {}) {
@@ -53,6 +125,11 @@
       if (!data || data.source !== "webchat-kefu-parent") return;
       if (data.type === "notification_permission") {
         parentNotificationPermission = data.permission || "";
+        // 父页面授权后,iframe 通过权限委派也立刻为 granted,这时把 SW 准备好。
+        if (parentNotificationPermission === "granted" &&
+            "Notification" in window && Notification.permission === "granted") {
+          ensureServiceWorker();
+        }
         refreshNotificationHint();
       }
     });
@@ -163,6 +240,22 @@
       return "Notification" in window;
     }
 
+    // 注册 Service Worker:移动端 Chrome 仅通过 SW 才能弹「通栏通知」,
+    // 普通的 new Notification(...) 在 Android Chrome 上不显示横幅。
+    function ensureServiceWorker() {
+      if (swRegistration) return Promise.resolve(swRegistration);
+      if (swRegistering) return swRegistering;
+      if (!("serviceWorker" in navigator)) return Promise.resolve(null);
+      swRegistering = navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(
+        (reg) => {
+          swRegistration = reg;
+          return reg;
+        },
+        () => null
+      );
+      return swRegistering;
+    }
+
     function showNotice(text, onClick) {
       if (!notice) return;
       notice.textContent = text;
@@ -212,18 +305,28 @@
 
     function requestNotificationPermission(force) {
       if (embeddedFrame) {
-        if (notificationPermissionRequested && !force) {
-          refreshNotificationHint();
-          return;
+        if (!notificationPermissionRequested || force) {
+          notificationPermissionRequested = true;
+          postParent("request_notification_permission", {
+            title: displayName.textContent || pathKey || "在线客服"
+          });
         }
-        notificationPermissionRequested = true;
-        postParent("request_notification_permission", {
-          title: displayName.textContent || pathKey || "在线客服"
-        });
+        // 现代浏览器对 iframe 启用「权限委派 (Permission Delegation)」:
+        // 父页面用 allow="notifications" 委派后,iframe 自身的
+        // Notification.permission 会自动等于父页面的授权状态,不会再弹第二个框。
+        // 所以这里只「读」权限并按需注册 SW,不再主动 requestPermission()。
+        if (notificationSupported() && Notification.permission === "granted") {
+          ensureServiceWorker();
+        }
         refreshNotificationHint();
         return;
       }
       if (!notificationSupported()) return;
+      if (Notification.permission === "granted") {
+        ensureServiceWorker();
+        refreshNotificationHint();
+        return;
+      }
       if (Notification.permission !== "default") {
         refreshNotificationHint();
         return;
@@ -233,7 +336,10 @@
       try {
         const request = Notification.requestPermission();
         if (request && typeof request.then === "function") {
-          request.then(() => refreshNotificationHint()).catch(() => refreshNotificationHint());
+          request.then((p) => {
+            if (p === "granted") ensureServiceWorker();
+            refreshNotificationHint();
+          }).catch(() => refreshNotificationHint());
         } else {
           refreshNotificationHint();
         }
@@ -262,16 +368,26 @@
           ctx.resume().catch(() => {});
         }
         const now = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(880, now);
-        gain.gain.setValueAtTime(0.0001, now);
-        gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.4);
+        const master = ctx.createGain();
+        master.gain.value = 0.85;
+        master.connect(ctx.destination);
+        // 两声叮咚:880Hz → 1320Hz,音量更大、更易听见。
+        const tones = [
+          { freq: 880, start: 0.0, end: 0.28, peak: 0.55 },
+          { freq: 1320, start: 0.18, end: 0.5, peak: 0.5 }
+        ];
+        tones.forEach((t) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(t.freq, now + t.start);
+          gain.gain.setValueAtTime(0.0001, now + t.start);
+          gain.gain.exponentialRampToValueAtTime(t.peak, now + t.start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + t.end);
+          osc.connect(gain).connect(master);
+          osc.start(now + t.start);
+          osc.stop(now + t.end + 0.02);
+        });
       } catch (_) {}
     }
 
@@ -291,38 +407,67 @@
       });
     }
 
+    async function showLocalNotification(title, options) {
+      // 优先用 Service Worker 显示通知 —— 移动端浏览器(尤其 Android Chrome)
+      // 只有通过 ServiceWorkerRegistration.showNotification 才会出现「通栏」横幅。
+      let reg = swRegistration;
+      if (!reg && "serviceWorker" in navigator) {
+        try { reg = await ensureServiceWorker(); } catch (_) {}
+      }
+      if (!reg && "serviceWorker" in navigator) {
+        try { reg = await navigator.serviceWorker.ready; } catch (_) {}
+      }
+      if (reg && typeof reg.showNotification === "function") {
+        try {
+          await reg.showNotification(title, options);
+          return true;
+        } catch (_) {}
+      }
+      try {
+        const n = new Notification(title, options);
+        n.onclick = () => { window.focus(); n.close(); };
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
     function maybeNotifyAgentMessage(message) {
       if (message.role !== "agent") return;
       const eventId = message.id ? String(message.id) : "";
       if (rememberLimited(notifiedEventIds, notifiedEventQueue, eventId)) return;
 
-      postParent("new_message", {
-        title: displayName.textContent || pathKey || "在线客服",
-        body: notificationBody(message),
-        tag: eventId ? `webchat:${pathKey}:${sessionId}:${eventId}` : `webchat:${pathKey}:${sessionId}`,
-        page_hidden: document.hidden
-      });
+      const title = displayName.textContent || pathKey || "在线客服";
+      const body = notificationBody(message);
+      const tag = eventId ? `webchat:${pathKey}:${sessionId}:${eventId}` : `webchat:${pathKey}:${sessionId}`;
 
-      // 页面在前台 → 播放滴一声；后台 → 弹浏览器通知（如已授权）。
+      // 前台:只播放声音。
       if (!document.hidden) {
         playDing();
         return;
       }
-      if (embeddedFrame || !notificationSupported() || Notification.permission !== "granted") {
-        // 后台且无通知权限：仍然尝试播放声音（部分浏览器后台 AudioContext 会被挂起，无害）。
-        playDing();
-        return;
-      }
-      try {
-        const notification = new Notification(displayName.textContent || pathKey || "在线客服", {
-          body: notificationBody(message),
-          tag: eventId ? `webchat:${pathKey}:${sessionId}:${eventId}` : `webchat:${pathKey}:${sessionId}`
+
+      // 后台:优先用 iframe 自己的 SW 通知(移动端能弹通栏);失败再让父页面兜底。
+      const ownGranted = notificationSupported() && Notification.permission === "granted";
+      let triedLocal = false;
+      if (ownGranted) {
+        triedLocal = true;
+        showLocalNotification(title, {
+          body,
+          tag,
+          renotify: true,
+          requireInteraction: false
+        }).then((ok) => {
+          if (!ok) {
+            postParent("new_message", { title, body, tag, page_hidden: true });
+          }
+        }).catch(() => {
+          postParent("new_message", { title, body, tag, page_hidden: true });
         });
-        notification.onclick = () => {
-          window.focus();
-          notification.close();
-        };
-      } catch (_) {}
+      } else {
+        postParent("new_message", { title, body, tag, page_hidden: true });
+      }
+      playDing();
     }
 
     function appendMessage(message, options = {}) {
