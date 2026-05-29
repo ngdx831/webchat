@@ -169,11 +169,25 @@ async def handle_key_management_callback(call: CallbackQuery, bot: Bot):
 
     if action == "botdel":
         rows = dbm.bot_binding_list(conn, widget["key"])
+        if not rows:
+            await _show_key_actions(call, conn, widget["key"])
+            await call.answer("没有可解绑的机器人")
+            return
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        buttons = []
         for row in rows:
-            await deactivate_customer_bot_binding(int(row["id"]))
-        count = dbm.bot_binding_delete(conn, widget["key"])
-        await _show_key_actions(call, conn, widget["key"])
-        await call.answer(f"已解绑 {count} 个机器人" if count else "没有可解绑的机器人")
+            uname = row.get("bot_username") or "-"
+            buttons.append([InlineKeyboardButton(
+                text=f"✅ 解绑 @{uname}",
+                callback_data=f"botdel_c:{widget['key']}:{row['id']}",
+            )])
+        buttons.append([InlineKeyboardButton(text="❌ 取消", callback_data="botdel_x")])
+        await _replace_or_send(
+            call,
+            f"确认要解绑 key `{widget['key']}` 的机器人吗？",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        )
+        await call.answer()
         return
 
     if action == "grp":
@@ -235,6 +249,33 @@ async def handle_key_management_callback(call: CallbackQuery, bot: Bot):
         await call.answer("已进入设置下班留言流程")
         return
 
+    if action == "tog":
+        current = int(widget.get("enabled") or 0)
+        new_val = 0 if current else 1
+        dbm.widget_set_enabled(conn, widget["key"], new_val)
+        await _show_key_actions(call, conn, widget["key"])
+        await call.answer("已上班" if new_val else "已下班")
+        return
+
+    if action == "sch":
+        if not call.message or _chat_type(call) != "private":
+            await _answer_error(call, "请在主机器人私聊中操作。")
+            return
+        dbm.pending_action_set(
+            conn,
+            int(user["telegram_user_id"]),
+            "await_work_schedule",
+            key=widget["key"],
+            ttl_seconds=300,
+        )
+        await call.message.answer(
+            f"请在 5 分钟内发送 key `{widget['key']}` 的上班时间。\n"
+            "格式示例：\n• 09:00-18:00\n• 09:00-18:00 1-5（1=周一，7=周日）\n"
+            "• 关闭（停止定时自动上下班）"
+        )
+        await call.answer("已进入设置上班时间流程")
+        return
+
     if action == "qr":
         conn, user, widget, error = _callback_vip_key_context(call, key)
         if error:
@@ -245,6 +286,42 @@ async def handle_key_management_callback(call: CallbackQuery, bot: Bot):
         return
 
     await _answer_error(call, "未知操作，请重新发送命令。")
+
+
+@dp.callback_query(F.data.startswith("botdel_"))
+async def handle_botdel_confirm_callback(call: CallbackQuery, bot: Bot):
+    if not is_main_bot(bot):
+        return
+    data = call.data or ""
+    await call.answer()
+
+    if data == "botdel_x":
+        if call.message:
+            await call.message.edit_text("❌ 已取消解绑")
+        return
+
+    if data.startswith("botdel_c:"):
+        parts = data[len("botdel_c:"):].split(":", 1)
+        if len(parts) != 2:
+            await call.message.edit_text("❌ 数据无效")
+            return
+        key_raw, binding_id_s = parts
+        conn, user, widget, error = _callback_key_context(call, key_raw)
+        if error:
+            await call.message.edit_text(f"❌ {error}")
+            return
+        try:
+            binding_id = int(binding_id_s)
+        except Exception:
+            await call.message.edit_text("❌ 数据无效")
+            return
+        await deactivate_customer_bot_binding(binding_id)
+        dbm.bot_binding_delete_by_id(conn, binding_id)
+        await _show_key_actions(call, conn, widget["key"])
+        return
+
+    if call.message:
+        await call.message.edit_text("❌ 未知操作")
 
 
 @dp.callback_query(F.data.startswith("qrm:"))

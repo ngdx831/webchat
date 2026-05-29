@@ -781,6 +781,92 @@
     document.addEventListener("touchstart", bootstrapGesture, { once: false, passive: true });
     input && input.addEventListener("focus", bootstrapGesture);
 
+    const attachBtn = document.getElementById("attachBtn");
+    const fileInput = document.getElementById("fileInput");
+
+    async function uploadFile(file) {
+      if (!file) return;
+      requestNotificationPermission();
+      persistSession();
+
+      // show preview immediately
+      const isImage = file.type.startsWith("image/");
+      let previewEl = null;
+      const box = document.createElement("div");
+      box.className = "msg user upload-sending";
+      if (isImage) {
+        const objUrl = URL.createObjectURL(file);
+        previewEl = document.createElement("img");
+        previewEl.className = "upload-preview";
+        previewEl.src = objUrl;
+        previewEl.alt = file.name;
+        box.appendChild(previewEl);
+      } else {
+        const nameEl = document.createElement("div");
+        nameEl.textContent = `📎 ${file.name}`;
+        box.appendChild(nameEl);
+      }
+      const hint = document.createElement("div");
+      hint.style.cssText = "font-size:12px;color:#999;margin-top:4px";
+      hint.textContent = "发送中…";
+      box.appendChild(hint);
+      messages.appendChild(box);
+      messages.scrollTop = messages.scrollHeight;
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("session_id", sessionId);
+      formData.append("visitor_id", visitorId);
+      if (streamToken) formData.append("token", streamToken);
+
+      let data;
+      try {
+        const resp = await fetch(`/api/upload/${encodeURIComponent(pathKey)}`, {
+          method: "POST",
+          body: formData,
+        });
+        data = await resp.json();
+        if (!data.ok) {
+          hint.textContent = `上传失败：${data.error || "UNKNOWN"}`;
+          box.classList.remove("upload-sending");
+          if (previewEl) URL.revokeObjectURL(previewEl.src);
+          return;
+        }
+      } catch (_) {
+        hint.textContent = "上传失败，请检查网络";
+        box.classList.remove("upload-sending");
+        if (previewEl) URL.revokeObjectURL(previewEl.src);
+        return;
+      }
+
+      // success — replace placeholder with real event
+      box.remove();
+      if (previewEl) URL.revokeObjectURL(previewEl.src);
+
+      const newSessionId = data.session_id || sessionId;
+      const sessionChanged = newSessionId !== sessionId;
+      sessionId = newSessionId;
+      persistSession();
+      const newToken = data.session_access_token || data.stream_token || "";
+      if (newToken) { streamToken = newToken; persistStreamToken(); }
+
+      if (data.event) {
+        appendMessage(data.event);
+        if (data.event.id) {
+          markSeen(data.event.id);
+          lastEventId = Math.max(lastEventId, Number(data.event.id) || 0);
+        }
+      }
+      if (sessionChanged || !stream || stream.readyState === 2) connectStream(true);
+    }
+
+    attachBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files && fileInput.files[0];
+      fileInput.value = "";
+      if (file) uploadFile(file);
+    });
+
     sendBtn.addEventListener("click", sendMessage);
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {

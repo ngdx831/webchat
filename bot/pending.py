@@ -1,3 +1,4 @@
+import re
 from contextlib import suppress
 from typing import Any, Dict, Optional
 
@@ -25,6 +26,60 @@ def _clear_blank(text: str) -> str:
     if text == "-":
         return ""
     return text
+
+
+_SCHEDULE_RE = re.compile(r"^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})(\s+(.+))?$")
+
+
+def _parse_work_schedule(text: str):
+    """Returns (valid, normalized_schedule, error_msg)."""
+    t = text.strip()
+    if t in ("关闭", "disable", "off", "close"):
+        return True, "", ""
+    m = _SCHEDULE_RE.match(t)
+    if not m:
+        return False, "", "格式错误，请参考示例"
+    start_s, end_s = m.group(1), m.group(2)
+    days_s = (m.group(4) or "").strip()
+
+    def _parse_time(s: str) -> str:
+        h, mi = map(int, s.split(":"))
+        if not (0 <= h <= 23 and 0 <= mi <= 59):
+            raise ValueError
+        return f"{h:02d}:{mi:02d}"
+
+    try:
+        start_s = _parse_time(start_s)
+        end_s = _parse_time(end_s)
+    except (ValueError, IndexError):
+        return False, "", "时间格式错误（HH:MM）"
+
+    days_norm = ""
+    if days_s:
+        if "-" in days_s and "," not in days_s:
+            parts = days_s.split("-")
+            if len(parts) != 2:
+                return False, "", "周几格式错误（如 1-5）"
+            try:
+                a, b = int(parts[0]), int(parts[1])
+                if not (1 <= a <= 7 and 1 <= b <= 7 and a <= b):
+                    raise ValueError
+                days_norm = f"{a}-{b}"
+            except ValueError:
+                return False, "", "周几范围错误（1=周一，7=周日）"
+        else:
+            try:
+                nums = [int(x.strip()) for x in days_s.replace("-", ",").split(",")]
+                if not all(1 <= n <= 7 for n in nums):
+                    raise ValueError
+                days_norm = ",".join(str(n) for n in sorted(set(nums)))
+            except ValueError:
+                return False, "", "周几格式错误"
+
+    schedule = f"{start_s}-{end_s}"
+    if days_norm:
+        schedule += f" {days_norm}"
+    return True, schedule, ""
 
 
 async def _bind_customer_bot_token(
@@ -109,6 +164,9 @@ async def handle_pending_action_message(msg: Message, bot: Bot) -> bool:
     if action == "await_offline_msg":
         return await _handle_await_offline_msg(msg, conn, user, key, text)
 
+    if action == "await_work_schedule":
+        return await _handle_await_work_schedule(msg, conn, user, key, text)
+
     if action == "await_quick_reply":
         return await _handle_await_quick_reply(msg, conn, user, key, text)
 
@@ -191,6 +249,29 @@ async def _handle_await_offline_msg(msg: Message, conn, user, key: str, text: st
     await msg.reply(
         f"✅ 已更新 {key} 的下班留言：\n{value or '（已清空）'}"
     )
+    return True
+
+
+async def _handle_await_work_schedule(msg: Message, conn, user, key: str, text: str) -> bool:
+    widget = require_owned_key(conn, user, key)
+    if not widget:
+        dbm.pending_action_clear(conn, int(user["telegram_user_id"]))
+        await msg.reply("没有权限，或 key 不存在。")
+        return True
+    if not text:
+        dbm.pending_action_clear(conn, int(user["telegram_user_id"]))
+        await msg.reply("内容为空，已取消。请重新点击「设置上班时间」按钮。")
+        return True
+    valid, schedule, err = _parse_work_schedule(text)
+    if not valid:
+        await msg.reply(f"❌ {err}\n格式示例：\n• 09:00-18:00\n• 09:00-18:00 1-5\n• 关闭")
+        return True
+    dbm.widget_set_work_schedule(conn, key, schedule)
+    dbm.pending_action_clear(conn, int(user["telegram_user_id"]))
+    if schedule:
+        await msg.reply(f"✅ 上班时间已设置：{schedule}（key={key}）")
+    else:
+        await msg.reply(f"✅ 定时上下班已关闭（key={key}）")
     return True
 
 

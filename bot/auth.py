@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 import db as dbm
 from config import ADMIN_IDS, DB_PATH
@@ -93,6 +93,10 @@ def open_user_context_from_telegram_user(tg_user):
     dbm.init_db(conn)
     user = current_user_from_telegram_user(conn, tg_user)
     return conn, user
+
+
+def open_user_context_from_callback(cb: CallbackQuery):
+    return open_user_context_from_telegram_user(cb.from_user)
 
 
 def vip_key_context(msg: Message, key: str):

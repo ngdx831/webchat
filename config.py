@@ -106,6 +106,14 @@ MAX_REQUEST_BYTES = 64 * 1024
 # 欢迎语 / 离线语 / 快捷回复等富文本字段的最大字符数
 MAX_RICH_TEXT_LENGTH = 4000
 
+# ===================== 5d) 上传文件大小上限 =====================
+
+# 客户从 web 端上传图片/文件的最大字节数（默认 10 MB）
+MAX_UPLOAD_BYTES = int(os.getenv("WEBCHAT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+
+# 定时上下班时区（IANA 时区名称）
+WORK_SCHEDULE_TZ = os.getenv("WEBCHAT_TZ", "Asia/Shanghai")
+
 # ===================== 6) 客服系统媒体文件落盘目录 =====================
 
 # 默认落在项目根目录 media/；项目目录变化时会跟随 BASE_DIR。

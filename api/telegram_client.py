@@ -80,6 +80,51 @@ def tg_send_message(forum_chat_id: int, thread_id: int, text: str) -> None:
     })
 
 
+def tg_send_photo_file(forum_chat_id: int, thread_id: int, file_path: str, caption: str = "") -> None:
+    if not BOT_TOKEN:
+        raise TelegramAPIError(0, "BOT_TOKEN_NOT_CONFIGURED", "sendPhoto")
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+    data = {"chat_id": forum_chat_id, "message_thread_id": thread_id}
+    if caption:
+        data["caption"] = caption
+    try:
+        with open(file_path, "rb") as f:
+            r = _session.post(url, data=data, files={"photo": f}, timeout=(5, 30))
+    except requests.RequestException as e:
+        logger.warning("tg_send_photo_file network error: %s", scrub_secrets(repr(e)))
+        raise TelegramAPIError(0, "NETWORK_ERROR", "sendPhoto") from None
+    try:
+        resp_data = r.json()
+    except ValueError:
+        raise TelegramAPIError(r.status_code, "BAD_RESPONSE", "sendPhoto") from None
+    if r.status_code >= 400 or not resp_data.get("ok"):
+        desc = str(resp_data.get("description") or "").strip() or f"HTTP_{r.status_code}"
+        raise TelegramAPIError(r.status_code, desc, "sendPhoto")
+
+
+def tg_send_document_file(forum_chat_id: int, thread_id: int, file_path: str, file_name: str = "", caption: str = "") -> None:
+    if not BOT_TOKEN:
+        raise TelegramAPIError(0, "BOT_TOKEN_NOT_CONFIGURED", "sendDocument")
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+    data = {"chat_id": forum_chat_id, "message_thread_id": thread_id}
+    if caption:
+        data["caption"] = caption
+    try:
+        fname = file_name or "file"
+        with open(file_path, "rb") as f:
+            r = _session.post(url, data=data, files={"document": (fname, f)}, timeout=(5, 30))
+    except requests.RequestException as e:
+        logger.warning("tg_send_document_file network error: %s", scrub_secrets(repr(e)))
+        raise TelegramAPIError(0, "NETWORK_ERROR", "sendDocument") from None
+    try:
+        resp_data = r.json()
+    except ValueError:
+        raise TelegramAPIError(r.status_code, "BAD_RESPONSE", "sendDocument") from None
+    if r.status_code >= 400 or not resp_data.get("ok"):
+        desc = str(resp_data.get("description") or "").strip() or f"HTTP_{r.status_code}"
+        raise TelegramAPIError(r.status_code, desc, "sendDocument")
+
+
 def tg_get_file_url(file_id: str) -> str:
     if not BOT_TOKEN:
         raise TelegramAPIError(0, "BOT_TOKEN_NOT_CONFIGURED", "getFile")

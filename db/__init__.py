@@ -30,6 +30,8 @@ from .widgets import (
     widget_set_offline_msg,
     widget_set_forum_chat_id,
     widget_set_welcome_text,
+    widget_set_work_schedule,
+    widget_get_work_schedule,
 )
 from .sessions import (
     session_get,
@@ -51,6 +53,7 @@ from .events import HISTORY_LIMIT, ensure_system_event, event_add, events_count,
 from .bot_bindings import (
     bot_binding_add,
     bot_binding_delete,
+    bot_binding_delete_by_id,
     bot_binding_list,
     bot_binding_list_by_owner,
     bot_binding_get,

@@ -23,6 +23,7 @@ def format_key_info_text(widget: Dict[str, Any], bindings: Optional[List[Dict[st
     status = "🟢 在线" if int(widget.get("enabled") or 0) else "🔴 离线"
     welcome = (widget.get("welcome_text") or "").strip() or "（未设置）"
     offline_msg = (widget.get("offline_msg") or "").strip() or "（未设置）"
+    schedule = (widget.get("work_schedule") or "").strip() or "（未设置）"
     bind_lines: List[str] = []
     if bindings:
         for b in bindings:
@@ -35,6 +36,7 @@ def format_key_info_text(widget: Dict[str, Any], bindings: Optional[List[Dict[st
         f"显示名：{widget.get('display_name') or ''}",
         f"客服群 ID：{widget.get('forum_chat_id')}",
         f"状态：{status}",
+        f"⏰ 上班时间：{schedule}",
         f"网页入口：{chat_address_for_key(key)}",
         f"挂件地址：{widget_address_for_key(key)}",
         "",
@@ -56,6 +58,8 @@ def key_actions_keyboard(key: str, bindings: Optional[List[Dict[str, Any]]] = No
     else:
         rows.append([InlineKeyboardButton(text="🤖 绑定机器人", callback_data=f"km:bot:{key}")])
     rows.append([InlineKeyboardButton(text="👥 绑定客服群", callback_data=f"km:grp:{key}")])
+    rows.append([InlineKeyboardButton(text="🔛 切换上下班", callback_data=f"km:tog:{key}")])
+    rows.append([InlineKeyboardButton(text="⏰ 设置上班时间", callback_data=f"km:sch:{key}")])
     rows.append([InlineKeyboardButton(text="📝 欢迎语", callback_data=f"km:welc:{key}")])
     rows.append([InlineKeyboardButton(text="🛌 下班留言", callback_data=f"km:off:{key}")])
     rows.append([InlineKeyboardButton(text="🔁 自动回复", callback_data=f"km:qr:{key}")])

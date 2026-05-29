@@ -3,7 +3,7 @@ import logging
 from flask import Flask, request
 from werkzeug.exceptions import HTTPException
 
-from config import API_HOST, API_PORT, BOT_TOKEN, MAX_REQUEST_BYTES
+from config import API_HOST, API_PORT, BOT_TOKEN, MAX_REQUEST_BYTES, MAX_UPLOAD_BYTES
 from shared.errors import scrub_secrets
 
 from .db_helpers import close_db_conn
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    app.config["MAX_CONTENT_LENGTH"] = int(MAX_REQUEST_BYTES)
+    app.config["MAX_CONTENT_LENGTH"] = max(int(MAX_REQUEST_BYTES), int(MAX_UPLOAD_BYTES))
     app.teardown_appcontext(close_db_conn)
 
     for bp in ALL_BLUEPRINTS:
