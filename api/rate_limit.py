@@ -1,6 +1,7 @@
 import hmac
 import time
 from ipaddress import ip_address, ip_network
+from threading import Lock
 from typing import Dict, List, Tuple
 
 from flask import request
@@ -11,6 +12,7 @@ from config import RATE_LIMIT_PER_60S, RESOLVED_INTERNAL_TOKEN, TRUSTED_PROXIES
 _rate_bucket: Dict[str, List[float]] = {}
 _last_bucket_prune_at = 0.0
 _BUCKET_PRUNE_INTERVAL_SECONDS = 60
+_bucket_lock = Lock()
 
 
 def _prune_empty_buckets(now: float) -> None:
@@ -28,14 +30,15 @@ def _prune_empty_buckets(now: float) -> None:
 
 def allow_rate(ip: str) -> bool:
     now = time.time()
-    _prune_empty_buckets(now)
-    b = _rate_bucket.get(ip, [])
-    b = [x for x in b if now - x < 60]
-    if len(b) >= RATE_LIMIT_PER_60S:
+    with _bucket_lock:
+        _prune_empty_buckets(now)
+        b = _rate_bucket.get(ip, [])
+        b = [x for x in b if now - x < 60]
+        if len(b) >= RATE_LIMIT_PER_60S:
+            _rate_bucket[ip] = b
+            return False
+        b.append(now)
         _rate_bucket[ip] = b
-        return False
-    b.append(now)
-    _rate_bucket[ip] = b
     return True
 
 

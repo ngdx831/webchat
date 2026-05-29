@@ -702,9 +702,16 @@
       if (streamToken) url += `&token=${encodeURIComponent(streamToken)}`;
       stream = new EventSource(url);
       stream.addEventListener("msg", (event) => {
-        const payload = JSON.parse(event.data);
-        appendMessage(payload, { notify: true });
+        try {
+          const payload = JSON.parse(event.data);
+          appendMessage(payload, { notify: true });
+        } catch (_) {}
       });
+      stream.onerror = () => {
+        if (stream.readyState === 2) {
+          setTimeout(() => connectStream(true), 5000);
+        }
+      };
     }
 
     async function sendMessage() {
@@ -728,7 +735,13 @@
           text
         })
       });
-      const data = await resp.json();
+      let data;
+      try {
+        data = await resp.json();
+      } catch (_) {
+        appendMessage({ role: "system", kind: "text", text: "服务器响应异常，请稍后重试。" });
+        return;
+      }
       if (!data.ok) {
         if (resp.status === 401 && data.error === "BAD_SESSION_TOKEN") {
           resetStoredSession();

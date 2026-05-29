@@ -9,7 +9,8 @@ from flask import Blueprint, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
 import db as dbm
-from config import MEDIA_TTL_SECONDS, WEBCHAT_MEDIA_ROOT
+from config import CUSTOMER_WAITING_HINT, MEDIA_TTL_SECONDS, WEBCHAT_MEDIA_ROOT
+from shared.errors import TelegramAPIError
 from shared.media_paths import media_relative_path
 
 from ..db_helpers import enrich_media_payload, get_conn, session_access_error, session_key_error, web_widget_or_error
@@ -116,6 +117,7 @@ def api_upload(key: str):
     offline_msg = w.get("offline_msg") or ""
 
     dbm.session_create_if_missing(conn, session_id, kk, forum_chat_id, channel="web", visitor_id=visitor_id)
+    dbm.ensure_system_event(conn, session_id, CUSTOMER_WAITING_HINT, marker="waiting_hint")
     s = dbm.session_get(conn, session_id) or {}
     thread_id = s.get("thread_id")
     if not thread_id:
@@ -164,16 +166,34 @@ def api_upload(key: str):
         local_path=rel_path,
         file_name=original_name,
     )
+    dbm.session_touch(conn, session_id)
     dbm.media_asset_upsert(conn, session_id, unique_id, kind, rel_path, ttl_seconds=MEDIA_TTL_SECONDS)
 
-    # forward to TG forum thread
-    try:
+    # forward to TG forum thread; retry once with a fresh topic if the original was deleted
+    def _tg_forward(tid: int) -> None:
         if kind == "photo":
-            tg_send_photo_file(forum_chat_id, int(thread_id), abs_path, caption=caption)
+            tg_send_photo_file(forum_chat_id, tid, abs_path, caption=caption)
         else:
-            tg_send_document_file(forum_chat_id, int(thread_id), abs_path, file_name=original_name, caption=caption)
-    except Exception:
-        logger.warning("upload tg forward failed: key=%s kind=%s", kk, kind, exc_info=True)
+            tg_send_document_file(forum_chat_id, tid, abs_path, file_name=original_name, caption=caption)
+
+    try:
+        _tg_forward(int(thread_id))
+    except TelegramAPIError:
+        try:
+            thread_id = ensure_thread(
+                conn,
+                session_id=session_id,
+                forum_chat_id=forum_chat_id,
+                key=kk,
+                display_name=display_name,
+                enabled=enabled,
+                offline_msg=offline_msg,
+                force_new=True,
+            )
+            _tg_forward(int(thread_id))
+        except TelegramAPIError:
+            logger.exception("upload tg forward failed after retry: key=%s kind=%s", kk, kind)
+            return json_error(502, "TG_SEND_FAILED")
 
     access_token = dbm.session_get_or_create_access_token(conn, session_id)
     payload = {

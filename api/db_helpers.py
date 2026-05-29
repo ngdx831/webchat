@@ -12,9 +12,15 @@ from .paths import PUBLIC_ROOT
 from .validators import json_error
 
 
+_db_inited = False
+
+
 def _open_conn():
+    global _db_inited
     conn = dbm.get_conn(DB_PATH)
-    dbm.init_db(conn)
+    if not _db_inited:
+        dbm.init_db(conn)
+        _db_inited = True
     return conn
 
 

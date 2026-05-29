@@ -86,6 +86,10 @@ def _should_be_online(schedule: str, tz) -> bool | None:
 
 async def _work_schedule_loop() -> None:
     tz = _get_tz()
+    try:
+        _apply_work_schedules(tz)
+    except Exception:
+        logger.exception("work_schedule_loop error (startup)")
     while True:
         await asyncio.sleep(60)
         try:
