@@ -84,15 +84,13 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
             return
         dbm.event_add(conn, session["session_id"], role="user", kind="text", text=text)
         dbm.session_touch(conn, session["session_id"])
-        if enabled == 0:
-            # 离线：不转发到客服群，仅首次会话回复下班留言
-            if session_created and offline_msg:
-                await msg.answer(offline_msg)
-        else:
-            thread_id = await ensure_support_thread(conn, session, widget)
-            await send_support_text(forum_chat_id, thread_id, text, label=f"{from_label}（TG）")
-            if session_created:
-                await msg.answer("已转人工客服，请稍等。")
+        # 离线且首次会话：先回复下班留言，再转发到客服群
+        if enabled == 0 and session_created and offline_msg:
+            await msg.answer(offline_msg)
+        thread_id = await ensure_support_thread(conn, session, widget)
+        await send_support_text(forum_chat_id, thread_id, text, label=f"{from_label}（TG）")
+        if enabled != 0 and session_created:
+            await msg.answer("已转人工客服，请稍等。")
         return
 
     file_id = ""
@@ -132,14 +130,12 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
         )
         dbm.session_touch(conn, session["session_id"])
         dbm.media_asset_upsert(conn, session["session_id"], file_id, kind, local_path, ttl_seconds=MEDIA_TTL_SECONDS)
-        if enabled == 0:
-            if session_created and offline_msg:
-                await msg.answer(offline_msg)
-        else:
-            thread_id = await ensure_support_thread(conn, session, widget)
-            await send_support_media(forum_chat_id, thread_id, kind, local_path, caption=caption)
-            if session_created:
-                await msg.answer("已转人工客服，请稍等。")
+        if enabled == 0 and session_created and offline_msg:
+            await msg.answer(offline_msg)
+        thread_id = await ensure_support_thread(conn, session, widget)
+        await send_support_media(forum_chat_id, thread_id, kind, local_path, caption=caption)
+        if enabled != 0 and session_created:
+            await msg.answer("已转人工客服，请稍等。")
     except Exception as exc:
         await msg.answer(f"媒体转发失败，请改用文字描述。错误：{exc}")
 
