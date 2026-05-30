@@ -48,6 +48,8 @@ def widget_get(conn: sqlite3.Connection, key: str) -> Optional[Dict[str, Any]]:
     offmsg_expr = "offline_msg" if _table_has_column(conn, "widgets", "offline_msg") else "''"
     offat_expr = "offline_ts" if _table_has_column(conn, "widgets", "offline_ts") else "0"
     welcome_expr = "welcome_text" if _table_has_column(conn, "widgets", "welcome_text") else "''"
+    sched_expr = "work_schedule" if _table_has_column(conn, "widgets", "work_schedule") else "''"
+    sched_active_expr = "work_schedule_active" if _table_has_column(conn, "widgets", "work_schedule_active") else "1"
     cur = conn.execute(
         f"""
         SELECT {keycol} as key, forum_chat_id, display_name,
@@ -55,7 +57,9 @@ def widget_get(conn: sqlite3.Connection, key: str) -> Optional[Dict[str, Any]]:
                {enabled_expr} as enabled,
                {offmsg_expr} as offline_msg,
                {offat_expr} as offline_at,
-               {welcome_expr} as welcome_text
+               {welcome_expr} as welcome_text,
+               {sched_expr} as work_schedule,
+               {sched_active_expr} as work_schedule_active
         FROM widgets
         WHERE {keycol}=?
         LIMIT 1
@@ -72,6 +76,8 @@ def widget_get(conn: sqlite3.Connection, key: str) -> Optional[Dict[str, Any]]:
     out["offline_msg"] = out.get("offline_msg") or ""
     out["offline_at"] = out.get("offline_at") or ""
     out["welcome_text"] = out.get("welcome_text") or ""
+    out["work_schedule"] = out.get("work_schedule") or ""
+    out["work_schedule_active"] = int(out.get("work_schedule_active") if out.get("work_schedule_active") is not None else 1)
     return out
 
 
@@ -82,6 +88,8 @@ def widget_list(conn: sqlite3.Connection, limit: int = 200) -> List[Dict[str, An
     offmsg_expr = "offline_msg" if _table_has_column(conn, "widgets", "offline_msg") else "''"
     offat_expr = "offline_ts" if _table_has_column(conn, "widgets", "offline_ts") else "0"
     welcome_expr = "welcome_text" if _table_has_column(conn, "widgets", "welcome_text") else "''"
+    sched_expr = "work_schedule" if _table_has_column(conn, "widgets", "work_schedule") else "''"
+    sched_active_expr = "work_schedule_active" if _table_has_column(conn, "widgets", "work_schedule_active") else "1"
     rows = conn.execute(
         f"""
         SELECT {keycol} as key, forum_chat_id, display_name,
@@ -89,7 +97,9 @@ def widget_list(conn: sqlite3.Connection, limit: int = 200) -> List[Dict[str, An
                {enabled_expr} as enabled,
                {offmsg_expr} as offline_msg,
                {offat_expr} as offline_at,
-               {welcome_expr} as welcome_text
+               {welcome_expr} as welcome_text,
+               {sched_expr} as work_schedule,
+               {sched_active_expr} as work_schedule_active
         FROM widgets
         ORDER BY {keycol} ASC
         LIMIT ?
@@ -104,6 +114,8 @@ def widget_list(conn: sqlite3.Connection, limit: int = 200) -> List[Dict[str, An
         row["offline_msg"] = row.get("offline_msg") or ""
         row["offline_at"] = row.get("offline_at") or ""
         row["welcome_text"] = row.get("welcome_text") or ""
+        row["work_schedule"] = row.get("work_schedule") or ""
+        row["work_schedule_active"] = int(row.get("work_schedule_active") if row.get("work_schedule_active") is not None else 1)
     return out
 
 
@@ -195,6 +207,16 @@ def widget_set_work_schedule(conn: sqlite3.Connection, key: str, schedule: str) 
     cur = conn.execute(
         f"UPDATE widgets SET work_schedule=? WHERE {keycol}=?",
         (schedule or "", key),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def widget_set_work_schedule_active(conn: sqlite3.Connection, key: str, active: bool) -> bool:
+    keycol = _widgets_key_col(conn)
+    cur = conn.execute(
+        f"UPDATE widgets SET work_schedule_active=? WHERE {keycol}=?",
+        (1 if active else 0, key),
     )
     conn.commit()
     return cur.rowcount > 0

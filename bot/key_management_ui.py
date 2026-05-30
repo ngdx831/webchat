@@ -59,7 +59,7 @@ def key_actions_keyboard(key: str, bindings: Optional[List[Dict[str, Any]]] = No
         rows.append([InlineKeyboardButton(text="🤖 绑定机器人", callback_data=f"km:bot:{key}")])
     rows.append([InlineKeyboardButton(text="👥 绑定客服群", callback_data=f"km:grp:{key}")])
     rows.append([InlineKeyboardButton(text="🔛 切换上下班", callback_data=f"km:tog:{key}")])
-    rows.append([InlineKeyboardButton(text="⏰ 设置上班时间", callback_data=f"km:sch:{key}")])
+    rows.append([InlineKeyboardButton(text="⏰ 上班时间设置", callback_data=f"km:sch_menu:{key}")])
     rows.append([InlineKeyboardButton(text="📝 欢迎语", callback_data=f"km:welc:{key}")])
     rows.append([InlineKeyboardButton(text="🛌 下班留言", callback_data=f"km:off:{key}")])
     rows.append([InlineKeyboardButton(text="🔁 自动回复", callback_data=f"km:qr:{key}")])
@@ -75,6 +75,17 @@ def key_list_keyboard(rows, limit: int = 50) -> Optional[InlineKeyboardMarkup]:
     if not buttons:
         return None
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def key_schedule_keyboard(key: str, schedule_active: bool) -> InlineKeyboardMarkup:
+    """上班时间子菜单：设置时间 + 开启/关闭自动切换。"""
+    toggle_text = "🔴 关闭自动切换" if schedule_active else "🟢 开启自动切换"
+    rows = [
+        [InlineKeyboardButton(text="📅 设置时间", callback_data=f"km:sch_set:{key}")],
+        [InlineKeyboardButton(text=toggle_text, callback_data=f"km:sch_tog:{key}")],
+        [InlineKeyboardButton(text="⬅️ 返回", callback_data=f"km:open:{key}")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def format_kls_rows(target_user_id: int, rows) -> str:

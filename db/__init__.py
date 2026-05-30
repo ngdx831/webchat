@@ -31,6 +31,7 @@ from .widgets import (
     widget_set_forum_chat_id,
     widget_set_welcome_text,
     widget_set_work_schedule,
+    widget_set_work_schedule_active,
     widget_get_work_schedule,
 )
 from .sessions import (

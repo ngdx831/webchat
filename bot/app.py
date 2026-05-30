@@ -102,8 +102,10 @@ def _apply_work_schedules(tz) -> None:
     with contextlib.closing(dbm.get_conn(DB_PATH)) as conn:
         dbm.init_db(conn)
         for widget in dbm.widget_list(conn):
-            schedule = dbm.widget_get_work_schedule(conn, widget["key"])
+            schedule = widget.get("work_schedule") or ""
             if not schedule:
+                continue
+            if not int(widget.get("work_schedule_active") or 1):
                 continue
             should_online = _should_be_online(schedule, tz)
             if should_online is None:

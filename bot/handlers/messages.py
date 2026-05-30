@@ -71,7 +71,9 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
         await msg.answer("创建客服会话失败，请稍后再试。")
         return
 
-    thread_id = await ensure_support_thread(conn, session, widget)
+    enabled = int((widget or {}).get("enabled") or 0)
+    offline_msg = (widget or {}).get("offline_msg") or ""
+    display_name = (widget or {}).get("display_name") or key
     forum_chat_id = int(widget["forum_chat_id"])
     from_label = msg.from_user.full_name if msg.from_user else "Telegram 客户"
 
@@ -82,9 +84,15 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
             return
         dbm.event_add(conn, session["session_id"], role="user", kind="text", text=text)
         dbm.session_touch(conn, session["session_id"])
-        await send_support_text(forum_chat_id, thread_id, text, label=f"{from_label}（TG）")
-        if session_created:
-            await msg.answer("已转人工客服，请稍等。")
+        if enabled == 0:
+            # 离线：不转发到客服群，仅首次会话回复下班留言
+            if session_created and offline_msg:
+                await msg.answer(offline_msg)
+        else:
+            thread_id = await ensure_support_thread(conn, session, widget)
+            await send_support_text(forum_chat_id, thread_id, text, label=f"{from_label}（TG）")
+            if session_created:
+                await msg.answer("已转人工客服，请稍等。")
         return
 
     file_id = ""
@@ -124,9 +132,14 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
         )
         dbm.session_touch(conn, session["session_id"])
         dbm.media_asset_upsert(conn, session["session_id"], file_id, kind, local_path, ttl_seconds=MEDIA_TTL_SECONDS)
-        await send_support_media(forum_chat_id, thread_id, kind, local_path, caption=caption)
-        if session_created:
-            await msg.answer("已转人工客服，请稍等。")
+        if enabled == 0:
+            if session_created and offline_msg:
+                await msg.answer(offline_msg)
+        else:
+            thread_id = await ensure_support_thread(conn, session, widget)
+            await send_support_media(forum_chat_id, thread_id, kind, local_path, caption=caption)
+            if session_created:
+                await msg.answer("已转人工客服，请稍等。")
     except Exception as exc:
         await msg.answer(f"媒体转发失败，请改用文字描述。错误：{exc}")
 

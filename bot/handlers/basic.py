@@ -130,8 +130,6 @@ async def customer_cmd_start(msg: Message, command: CommandObject, active_bot: B
         text_parts.append(welcome_text)
     else:
         text_parts.append(display_name)
-    if enabled == 0 and offline_msg:
-        text_parts.append(offline_msg)
 
     await active_bot.send_message(
         chat_id=msg.chat.id,

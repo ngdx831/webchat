@@ -17,6 +17,7 @@ from ..key_management_ui import (
     format_kls_rows,
     key_actions_keyboard,
     key_list_keyboard,
+    key_schedule_keyboard,
     quick_reply_item_keyboard,
     quick_reply_item_text,
     quick_reply_management_keyboard,
@@ -257,7 +258,21 @@ async def handle_key_management_callback(call: CallbackQuery, bot: Bot):
         await call.answer("已上班" if new_val else "已下班")
         return
 
-    if action == "sch":
+    if action in ("sch", "sch_menu"):
+        schedule = (widget.get("work_schedule") or "").strip()
+        schedule_active = bool(int(widget.get("work_schedule_active") or 1))
+        status_text = "⏰ <b>上班时间设置</b>\n"
+        if schedule:
+            auto_status = "🟢 自动切换已开启" if schedule_active else "🔴 自动切换已关闭"
+            status_text += f"当前时间段：<code>{schedule}</code>\n{auto_status}"
+        else:
+            status_text += "当前未设置上班时间（不自动切换）"
+        if call.message:
+            await call.message.answer(status_text, parse_mode="HTML", reply_markup=key_schedule_keyboard(widget["key"], schedule_active))
+        await call.answer()
+        return
+
+    if action == "sch_set":
         if not call.message or _chat_type(call) != "private":
             await _answer_error(call, "请在主机器人私聊中操作。")
             return
@@ -270,10 +285,28 @@ async def handle_key_management_callback(call: CallbackQuery, bot: Bot):
         )
         await call.message.answer(
             f"请在 5 分钟内发送 key `{widget['key']}` 的上班时间。\n"
-            "格式示例：\n• 09:00-18:00\n• 09:00-18:00 1-5（1=周一，7=周日）\n"
+            "格式示例：\n• 18:00-04:00 1-7（每天 18 点到次日 4 点）\n"
+            "• 09:00-18:00 1-5（周一到周五）\n"
             "• 关闭（停止定时自动上下班）"
         )
         await call.answer("已进入设置上班时间流程")
+        return
+
+    if action == "sch_tog":
+        current_active = bool(int(widget.get("work_schedule_active") or 1))
+        new_active = not current_active
+        dbm.widget_set_work_schedule_active(conn, widget["key"], new_active)
+        widget["work_schedule_active"] = 1 if new_active else 0
+        schedule = (widget.get("work_schedule") or "").strip()
+        status_text = "⏰ <b>上班时间设置</b>\n"
+        if schedule:
+            auto_status = "🟢 自动切换已开启" if new_active else "🔴 自动切换已关闭"
+            status_text += f"当前时间段：<code>{schedule}</code>\n{auto_status}"
+        else:
+            status_text += "当前未设置上班时间（不自动切换）"
+        if call.message:
+            await call.message.edit_text(status_text, parse_mode="HTML", reply_markup=key_schedule_keyboard(widget["key"], new_active))
+        await call.answer("✅ 已" + ("开启" if new_active else "关闭") + "自动切换")
         return
 
     if action == "qr":

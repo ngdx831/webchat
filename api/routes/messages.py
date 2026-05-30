@@ -94,39 +94,20 @@ def api_msg(key: str):
         dbm.source_session_add(conn, kk, source_code, "web", visitor_id, session_id)
     if created and source_code:
         dbm.source_click_add(conn, kk, source_code, "web", visitor_id)
-    if enabled == 0 and offline_msg:
-        dbm.ensure_system_event(conn, session_id, offline_msg, marker="offline_msg")
-    s = dbm.session_get(conn, session_id) or {}
-    thread_id = s.get("thread_id")
 
-    # 首条消息：创建话题（话题名带随机尾巴，避免都一样）
-    if not thread_id:
-        thread_id = ensure_thread(
-            conn,
-            session_id=session_id,
-            forum_chat_id=forum_chat_id,
-            key=kk,
-            display_name=display_name,
-            enabled=enabled,
-            offline_msg=offline_msg,
-            channel="web",
-            source_code=source_code,
-            force_new=False,
-        )
-
-    # 记录事件（用户）
+    # 记录用户消息事件（始终保存）
     event_id = dbm.event_add(conn, session_id, role="user", kind="text", text=text, file_id="", caption="", from_name="")
     dbm.session_touch(conn, session_id)
 
-    prefix = "👤 <b>客户</b>："
-    body = f"{prefix}\n{html_escape(text)}"
-
-    # ✅ 关键修复：如果管理员手动删除/关闭了话题，但 DB 里还保留旧 thread_id，
-    # sendMessage 会报错 -> 这里自动重建话题并重试一次，避免前端收到 INTERNAL_ERROR。
-    try:
-        tg_send_message(forum_chat_id, int(thread_id), body)
-    except TelegramAPIError:
-        try:
+    if enabled == 0:
+        # 离线：不转发到客服群，仅首次会话写入下班留言（以客服回复形式）
+        if created and offline_msg:
+            dbm.event_add(conn, session_id, role="agent", kind="text", text=offline_msg, from_name=display_name)
+    else:
+        # 在线：创建 TG 话题并转发消息
+        s = dbm.session_get(conn, session_id) or {}
+        thread_id = s.get("thread_id")
+        if not thread_id:
             thread_id = ensure_thread(
                 conn,
                 session_id=session_id,
@@ -134,15 +115,32 @@ def api_msg(key: str):
                 key=kk,
                 display_name=display_name,
                 enabled=enabled,
-                offline_msg=offline_msg,
+                offline_msg="",
                 channel="web",
                 source_code=source_code,
-                force_new=True,
+                force_new=False,
             )
+        body = f"👤 <b>客户</b>：\n{html_escape(text)}"
+        try:
             tg_send_message(forum_chat_id, int(thread_id), body)
         except TelegramAPIError:
-            logger.exception("tg_send_message failed after retry")
-            return json_error(502, "TG_SEND_FAILED")
+            try:
+                thread_id = ensure_thread(
+                    conn,
+                    session_id=session_id,
+                    forum_chat_id=forum_chat_id,
+                    key=kk,
+                    display_name=display_name,
+                    enabled=enabled,
+                    offline_msg="",
+                    channel="web",
+                    source_code=source_code,
+                    force_new=True,
+                )
+                tg_send_message(forum_chat_id, int(thread_id), body)
+            except TelegramAPIError:
+                logger.exception("tg_send_message failed after retry")
+                return json_error(502, "TG_SEND_FAILED")
 
     access_token = dbm.session_get_or_create_access_token(conn, session_id)
     return jsonify({
