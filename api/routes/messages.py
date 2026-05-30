@@ -118,8 +118,7 @@ def api_msg(key: str):
     event_id = dbm.event_add(conn, session_id, role="user", kind="text", text=text, file_id="", caption="", from_name="")
     dbm.session_touch(conn, session_id)
 
-    # 发到 TG（离线时标识一下）
-    prefix = "👤 <b>客户（离线留言）</b>：" if enabled == 0 else "👤 <b>客户</b>："
+    prefix = "👤 <b>客户</b>："
     body = f"{prefix}\n{html_escape(text)}"
 
     # ✅ 关键修复：如果管理员手动删除/关闭了话题，但 DB 里还保留旧 thread_id，

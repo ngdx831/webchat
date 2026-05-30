@@ -643,10 +643,7 @@
       const offlineMsg = (data.offline_msg || "").trim();
       renderQuickReplies(data.quick_replies || [], data.display_name || "");
       await loadHistory();
-      // 历史加载完后再插入顶部，避免被 loadHistory 清空；逆序 prepend 保证显示顺序正确
-      if (!data.enabled && offlineMsg) {
-        prependMessage({ role: "agent", kind: "text", text: offlineMsg, from_name: data.display_name || "" });
-      }
+      // 欢迎语固定在历史顶部；下班留言仅在客户发消息后由后端写入历史，不在此展示
       if (welcomeText) {
         prependMessage({ role: "agent", kind: "text", text: welcomeText, from_name: data.display_name || "" });
       }
@@ -687,12 +684,6 @@
       if (!streamToken) return;
       const q = `session_id=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(streamToken)}`;
       const resp = await fetch(`/api/history/${encodeURIComponent(pathKey)}?${q}`);
-      if (resp.status === 401) {
-        resetStoredSession();
-        sessionId = cryptoRandom();
-        streamToken = "";
-        return;
-      }
       if (!resp.ok) return;
       const data = await resp.json();
       if (!data.ok) return;
@@ -734,7 +725,6 @@
       requestNotificationPermission();
       input.value = "";
       appendMessage({ role: "user", kind: "text", text });
-      persistSession();
 
       const resp = await fetch(`/api/msg/${encodeURIComponent(pathKey)}`, {
         method: "POST",
