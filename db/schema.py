@@ -166,6 +166,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     )
     """)
 
+    _add_column(conn, "widgets", "work_schedule TEXT DEFAULT ''")
+
     for sql in [
         "CREATE INDEX IF NOT EXISTS idx_users_role_enabled ON users(role, enabled)",
         "CREATE INDEX IF NOT EXISTS idx_widgets_owner ON widgets(owner_user_id)",

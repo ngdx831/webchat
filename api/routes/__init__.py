@@ -5,6 +5,7 @@ from .stream import bp as stream_bp
 from .media import bp as media_bp
 from .internal import bp as internal_bp
 from .static_assets import bp as static_assets_bp
+from .upload import bp as upload_bp
 
 
 ALL_BLUEPRINTS = (
@@ -15,4 +16,5 @@ ALL_BLUEPRINTS = (
     stream_bp,
     media_bp,
     internal_bp,
+    upload_bp,
 )

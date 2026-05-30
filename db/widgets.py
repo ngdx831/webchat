@@ -188,3 +188,26 @@ def widget_set_welcome_text(conn: sqlite3.Connection, key: str, welcome_text: st
     )
     conn.commit()
     return cur.rowcount > 0
+
+
+def widget_set_work_schedule(conn: sqlite3.Connection, key: str, schedule: str) -> bool:
+    keycol = _widgets_key_col(conn)
+    cur = conn.execute(
+        f"UPDATE widgets SET work_schedule=? WHERE {keycol}=?",
+        (schedule or "", key),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def widget_get_work_schedule(conn: sqlite3.Connection, key: str) -> str:
+    keycol = _widgets_key_col(conn)
+    row = conn.execute(
+        f"SELECT work_schedule FROM widgets WHERE {keycol}=? LIMIT 1", (key,)
+    ).fetchone()
+    if not row:
+        return ""
+    try:
+        return row["work_schedule"] or ""
+    except (KeyError, IndexError):
+        return ""

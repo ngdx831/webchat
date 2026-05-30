@@ -37,7 +37,7 @@ def api_msg(key: str):
         return json_error(400, "BAD_KEY")
 
     try:
-        data = request.get_json(force=True, silent=False)
+        data = request.get_json(force=True, silent=False) or {}
     except RequestEntityTooLarge:
         return json_error(413, "REQUEST_TOO_LARGE")
     except Exception:
@@ -115,6 +115,7 @@ def api_msg(key: str):
 
     # 记录事件（用户）
     event_id = dbm.event_add(conn, session_id, role="user", kind="text", text=text, file_id="", caption="", from_name="")
+    dbm.session_touch(conn, session_id)
 
     # 发到 TG（离线时标识一下）
     prefix = "👤 <b>客户（离线留言）</b>：" if enabled == 0 else "👤 <b>客户</b>："

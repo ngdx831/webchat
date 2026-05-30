@@ -81,6 +81,7 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
             await msg.answer("请直接发送咨询内容，或使用 /start 查看常见问题。")
             return
         dbm.event_add(conn, session["session_id"], role="user", kind="text", text=text)
+        dbm.session_touch(conn, session["session_id"])
         await send_support_text(forum_chat_id, thread_id, text, label=f"{from_label}（TG）")
         if session_created:
             await msg.answer("已转人工客服，请稍等。")
@@ -121,6 +122,7 @@ async def _handle_customer_private_message_with_conn(conn, msg: Message, active_
             file_id=file_id,
             local_path=local_path,
         )
+        dbm.session_touch(conn, session["session_id"])
         dbm.media_asset_upsert(conn, session["session_id"], file_id, kind, local_path, ttl_seconds=MEDIA_TTL_SECONDS)
         await send_support_media(forum_chat_id, thread_id, kind, local_path, caption=caption)
         if session_created:

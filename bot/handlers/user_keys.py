@@ -1,14 +1,16 @@
 from typing import Any, Dict
 
-from aiogram import Bot
+from aiogram import Bot, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 import db as dbm
 
 from ..auth import (
+    is_admin_user,
     key_limit_for_role,
     open_user_context,
+    open_user_context_from_callback,
     require_enabled_user,
     require_owned_key,
     user_display_role,
@@ -17,10 +19,6 @@ from ..customer_bots import deactivate_customer_bot_binding, is_main_bot
 from ..key_management_ui import format_key_info_text, key_actions_keyboard
 from ..runtime import dp
 from ..validators import explain_key_error, validate_key
-
-
-def _key_info_text(widget: Dict[str, Any]) -> str:
-    return format_key_info_text(widget)
 
 
 @dp.message(Command("keyadd"))
@@ -96,6 +94,7 @@ async def cmd_keyinfo(msg: Message, bot: Bot):
     if not widget:
         await msg.reply("没有权限，或 key 不存在。")
         return
+    widget["work_schedule"] = dbm.widget_get_work_schedule(conn, key)
     bindings = dbm.bot_binding_list(conn, key)
     await msg.reply(
         format_key_info_text(widget, bindings),

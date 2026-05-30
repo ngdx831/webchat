@@ -54,6 +54,12 @@ def bot_binding_delete(conn: sqlite3.Connection, key: str, bot_username: str = "
     return cur.rowcount
 
 
+def bot_binding_delete_by_id(conn: sqlite3.Connection, binding_id: int) -> int:
+    cur = conn.execute("DELETE FROM bot_bindings WHERE id=?", (int(binding_id),))
+    conn.commit()
+    return cur.rowcount
+
+
 def bot_binding_list(conn: sqlite3.Connection, key: str = "", enabled_only: bool = False) -> List[Dict[str, Any]]:
     where = []
     args: List[Any] = []
