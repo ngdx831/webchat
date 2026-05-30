@@ -470,6 +470,20 @@
       playDing();
     }
 
+    function prependMessage(message) {
+      const role = message.role || "system";
+      const box = document.createElement("div");
+      box.className = `msg ${role}`;
+      if (message.from_name) {
+        const from = document.createElement("div");
+        from.className = "from";
+        from.textContent = message.from_name;
+        box.appendChild(from);
+      }
+      renderContent(box, message);
+      messages.insertBefore(box, messages.firstChild);
+    }
+
     function appendMessage(message, options = {}) {
       if (alreadySeen(message.id)) return;
       const role = message.role || "system";
@@ -625,19 +639,17 @@
         notification_permission: embeddedFrame ? parentNotificationPermission : (notificationSupported() ? Notification.permission : "unsupported")
       });
 
-      // 欢迎语作为客服角色发出的「招呼」展示；离线时下班留言在欢迎之后。
       const welcomeText = (data.welcome_text || "").trim();
       const offlineMsg = (data.offline_msg || "").trim();
-      if (welcomeText) {
-        appendMessage({ role: "agent", kind: "text", text: welcomeText, from_name: data.display_name || "" });
-      }
-      if (!data.enabled && offlineMsg) {
-        appendMessage({ role: "agent", kind: "text", text: offlineMsg, from_name: data.display_name || "" });
-      } else if (data.enabled && data.waiting_hint && !welcomeText) {
-        appendMessage({ role: "system", kind: "text", text: data.waiting_hint });
-      }
       renderQuickReplies(data.quick_replies || [], data.display_name || "");
       await loadHistory();
+      // 历史加载完后再插入顶部，避免被 loadHistory 清空；逆序 prepend 保证显示顺序正确
+      if (!data.enabled && offlineMsg) {
+        prependMessage({ role: "agent", kind: "text", text: offlineMsg, from_name: data.display_name || "" });
+      }
+      if (welcomeText) {
+        prependMessage({ role: "agent", kind: "text", text: welcomeText, from_name: data.display_name || "" });
+      }
       connectStream();
       refreshNotificationHint();
     }

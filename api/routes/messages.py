@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
 import db as dbm
-from config import CUSTOMER_WAITING_HINT, MAX_TEXT_LENGTH
+from config import MAX_TEXT_LENGTH
 from shared.errors import TelegramAPIError
 from shared.event_payload import event_row_to_payload
 
@@ -94,7 +94,8 @@ def api_msg(key: str):
         dbm.source_session_add(conn, kk, source_code, "web", visitor_id, session_id)
     if created and source_code:
         dbm.source_click_add(conn, kk, source_code, "web", visitor_id)
-    dbm.ensure_system_event(conn, session_id, CUSTOMER_WAITING_HINT, marker="waiting_hint")
+    if enabled == 0 and offline_msg:
+        dbm.ensure_system_event(conn, session_id, offline_msg, marker="offline_msg")
     s = dbm.session_get(conn, session_id) or {}
     thread_id = s.get("thread_id")
 

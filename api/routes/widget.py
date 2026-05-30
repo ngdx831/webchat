@@ -3,7 +3,6 @@ import uuid
 from flask import Blueprint, jsonify, request, send_from_directory
 
 import db as dbm
-from config import CUSTOMER_WAITING_HINT
 
 from ..db_helpers import get_conn, web_widget_or_error
 from ..paths import PUBLIC_DIR
@@ -62,7 +61,6 @@ def api_widget(key: str):
         "welcome_text": w.get("welcome_text") or "",
         "offline_msg": w.get("offline_msg") or "",
         "offline_at": w.get("offline_at") or "",
-        "waiting_hint": CUSTOMER_WAITING_HINT,
         "quick_replies": [
             {
                 "id": item["id"],
