@@ -26,6 +26,10 @@
     let parentNotificationPermission = "";
     let swRegistration = null;
     let swRegistering = null;
+    let widgetEnabled = false;
+    let agentWaitBox = null;
+    let agentWaitTimer = null;
+    const AGENT_WAIT_TIMEOUT_MS = 3 * 60 * 1000;
     const embeddedFrame = window.parent && window.parent !== window;
 
     if ("scrollRestoration" in history) {
@@ -407,6 +411,50 @@
       });
     }
 
+    function clearAgentWaitStatus() {
+      if (agentWaitTimer) {
+        clearTimeout(agentWaitTimer);
+        agentWaitTimer = null;
+      }
+      if (agentWaitBox) {
+        agentWaitBox.remove();
+        agentWaitBox = null;
+      }
+    }
+
+    function showAgentWaitStatus() {
+      if (agentWaitBox) {
+        scrollToLatest();
+        return;
+      }
+
+      agentWaitBox = document.createElement("div");
+      agentWaitBox.className = "msg agent agent-wait";
+      agentWaitBox.setAttribute("aria-live", "polite");
+
+      const text = document.createElement("span");
+      text.textContent = "正在呼叫客服，请稍等";
+      const dots = document.createElement("span");
+      dots.className = "wait-dots";
+      dots.setAttribute("aria-hidden", "true");
+      dots.innerHTML = "<i></i><i></i><i></i>";
+
+      agentWaitBox.appendChild(text);
+      agentWaitBox.appendChild(dots);
+      messages.appendChild(agentWaitBox);
+      scrollToLatest();
+
+      agentWaitTimer = setTimeout(() => {
+        clearAgentWaitStatus();
+        appendMessage({
+          role: "agent",
+          kind: "text",
+          text: "客服暂时不在线，请留言",
+          from_name: displayName.textContent || ""
+        });
+      }, AGENT_WAIT_TIMEOUT_MS);
+    }
+
     async function showLocalNotification(title, options) {
       // 优先用 Service Worker 显示通知 —— 移动端浏览器(尤其 Android Chrome)
       // 只有通过 ServiceWorkerRegistration.showNotification 才会出现「通栏」横幅。
@@ -487,6 +535,9 @@
     function appendMessage(message, options = {}) {
       if (alreadySeen(message.id)) return;
       const role = message.role || "system";
+      if (role === "agent" && options.notify) {
+        clearAgentWaitStatus();
+      }
       const box = document.createElement("div");
       box.className = `msg ${role}`;
 
@@ -633,7 +684,8 @@
       }
 
       displayName.textContent = data.display_name || pathKey || "在线客服";
-      statusText.textContent = data.enabled ? "在线" : "离线";
+      widgetEnabled = Boolean(data.enabled);
+      statusText.textContent = widgetEnabled ? "在线咨询" : "离线留言";
       postParent("ready", {
         title: displayName.textContent || pathKey || "在线客服",
         notification_permission: embeddedFrame ? parentNotificationPermission : (notificationSupported() ? Notification.permission : "unsupported")
@@ -741,10 +793,12 @@
       try {
         data = await resp.json();
       } catch (_) {
+        clearAgentWaitStatus();
         appendMessage({ role: "system", kind: "text", text: "服务器响应异常，请稍后重试。" });
         return;
       }
       if (!data.ok) {
+        clearAgentWaitStatus();
         if (resp.status === 401 && data.error === "BAD_SESSION_TOKEN") {
           resetStoredSession();
           sessionId = cryptoRandom();
@@ -768,6 +822,11 @@
       if (newToken) {
         streamToken = newToken;
         persistStreamToken();
+      }
+      if (data.created && Number(data.enabled) === 1) {
+        showAgentWaitStatus();
+      } else {
+        clearAgentWaitStatus();
       }
       // 只有 session 变化或 stream 已关闭时才重连。
       if (sessionChanged || !stream || stream.readyState === 2) connectStream(true);

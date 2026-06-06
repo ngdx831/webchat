@@ -146,6 +146,8 @@ def api_msg(key: str):
         "ok": True,
         "session_id": session_id,
         "event_id": event_id,
+        "created": bool(created),
+        "enabled": enabled,
         "session_access_token": access_token,
         "stream_token": access_token,
     })
